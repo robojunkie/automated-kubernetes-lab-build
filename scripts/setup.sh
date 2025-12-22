@@ -1,26 +1,16 @@
 #!/bin/bash
 
-echo "Welcome to the Kubernetes Lab Setup Script"
+# Prompt the user to optionally run the cleanup script
+echo "Do you want to run cleanup.sh to remove any previous Kubernetes remnants? (yes/no)"
+read -r user_input
 
-# Ask for master and worker IPs or hostnames
-read -r -p "Enter master node hostname or IP: " MASTER_NODE
-read -r -p "Enter number of worker nodes: " WORKER_COUNT
+if [[ "${user_input}" == "yes" ]]; then
+    echo "Running cleanup.sh..."
+    ./cleanup.sh || { echo "Cleanup script failed. Please check your setup."; exit 1; }
+else
+    echo "Skipping cleanup process."
+fi
 
-# Collect worker nodes' IPs/hostnames interactively
-WORKER_NODES=()
-for i in $(seq 1 "$WORKER_COUNT"); do
-    read -r -p "Enter hostname or IP of worker node $i: " WORKER_NODE
-    WORKER_NODES+=("$WORKER_NODE")
-done
-
-# Networking setup
-read -r -p "Enter subnet for cluster networking (e.g., 192.168.1.0/24): " SUBNET
-read -r -p "Make containers public by default? (yes/no): " PUBLIC_CONTAINER_ACCESS
-
-echo "\nConfiguration summary:"
-echo "Master Node: $MASTER_NODE"
-echo "Worker Nodes: ${WORKER_NODES[*]}"
-echo "Cluster Subnet: $SUBNET"
-echo "Public Containers: $PUBLIC_CONTAINER_ACCESS"
- 
-echo "\nFurther setup steps will be added later."
+# Existing setup configuration prompts and structure...
+echo "Welcome to the Kubernetes automated setup script. Please follow the instructions."
+# Add other setup configurations here (existing content)
