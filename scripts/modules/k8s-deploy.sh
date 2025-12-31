@@ -142,6 +142,13 @@ initialize_master() {
     
     # Reset any previous kubeadm state and ensure kubelet is fully stopped so ports are free
     log_info "Cleaning up any previous Kubernetes state..."
+    # Stop/disable any k3s that may occupy control-plane ports
+    ssh_execute "$master_ip" "sudo systemctl stop k3s k3s-agent 2>/dev/null || true"
+    ssh_execute "$master_ip" "sudo systemctl disable k3s k3s-agent 2>/dev/null || true"
+    ssh_execute "$master_ip" "sudo pkill -9 -f k3s || true"
+    ssh_execute "$master_ip" "sudo rm -f /etc/systemd/system/k3s.service /etc/systemd/system/k3s-agent.service"
+    ssh_execute "$master_ip" "sudo systemctl daemon-reload || true"
+
     ssh_execute "$master_ip" "sudo systemctl stop kubelet || true"
     ssh_execute "$master_ip" "sudo systemctl reset-failed kubelet || true"
     ssh_execute "$master_ip" "sudo pkill -9 -f kubelet || true"
