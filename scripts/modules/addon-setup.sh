@@ -92,7 +92,7 @@ setup_weave() {
     log_debug "Installing Weave CNI..."
     
     # Execute kubectl on master node via SSH
-    ssh_execute "$master_ip" "kubectl apply -f 'https://cloud.weave.works/k8s/net?k8s-version=\$(kubectl version | base64 | tr -d '\''\n'\'')'\"
+    ssh_execute "$master_ip" "kubectl apply -f \"https://cloud.weave.works/k8s/net?k8s-version=\$(kubectl version | base64 | tr -d '\\n')\""
     
     log_success "Weave CNI configured"
 }
