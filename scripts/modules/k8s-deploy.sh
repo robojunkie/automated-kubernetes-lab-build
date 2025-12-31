@@ -276,7 +276,7 @@ deploy_kubernetes() {
     
     # Setup CNI (Calico by default)
     log_info "Deploying CNI plugin..."
-    setup_cni "${CNI_PLUGIN:-calico}" "10.244.0.0/16"
+    setup_cni "${CNI_PLUGIN:-calico}" "10.244.0.0/16" "$master_ip"
     
     # Wait for master to be ready (with CNI deployed)
     # Note: This requires kubectl to be configured properly

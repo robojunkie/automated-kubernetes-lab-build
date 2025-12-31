@@ -11,18 +11,19 @@
 setup_cni() {
     local cni_plugin=$1
     local pod_cidr=$2
+    local master_ip=$3
     
     log_info "Setting up CNI plugin: $cni_plugin"
     
     case "$cni_plugin" in
         calico)
-            setup_calico "$pod_cidr"
+            setup_calico "$pod_cidr" "$master_ip"
             ;;
         flannel)
-            setup_flannel "$pod_cidr"
+            setup_flannel "$pod_cidr" "$master_ip"
             ;;
         weave)
-            setup_weave
+            setup_weave "$master_ip"
             ;;
         *)
             log_error "Unsupported CNI plugin: $cni_plugin"
@@ -38,16 +39,18 @@ setup_cni() {
 ################################################################################
 setup_calico() {
     local pod_cidr=$1
+    local master_ip=$2
     
     log_debug "Installing Calico CNI..."
     
-    kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/tigera-operator.yaml
+    # Execute kubectl on master node via SSH
+    ssh_execute "$master_ip" "kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/tigera-operator.yaml"
     
     # Wait for operator to be ready
     sleep 10
     
-    # Create Calico custom resource
-    kubectl apply -f - << EOF
+    # Create Calico custom resource via SSH
+    ssh_execute "$master_ip" "cat << 'CALICO_EOF' | kubectl apply -f -
 apiVersion: operator.tigera.io/v1
 kind: Installation
 metadata:
@@ -60,7 +63,7 @@ spec:
       encapsulation: VXLANCrossSubnet
       natOutgoing: Enabled
       nodeSelector: all()
-EOF
+CALICO_EOF"
     
     log_success "Calico CNI configured"
 }
@@ -70,10 +73,12 @@ EOF
 ################################################################################
 setup_flannel() {
     local pod_cidr=$1
+    local master_ip=$2
     
     log_debug "Installing Flannel CNI..."
     
-    kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+    # Execute kubectl on master node via SSH
+    ssh_execute "$master_ip" "kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml"
     
     log_success "Flannel CNI configured"
 }
@@ -82,9 +87,12 @@ setup_flannel() {
 # Setup Weave CNI
 ################################################################################
 setup_weave() {
+    local master_ip=$1
+    
     log_debug "Installing Weave CNI..."
     
-    kubectl apply -f "https://cloud.weave.works/k8s/net?k8s-version=$(kubectl version | base64 | tr -d '\n')"
+    # Execute kubectl on master node via SSH
+    ssh_execute "$master_ip" "kubectl apply -f 'https://cloud.weave.works/k8s/net?k8s-version=\$(kubectl version | base64 | tr -d '\''\n'\'')'\"
     
     log_success "Weave CNI configured"
 }
