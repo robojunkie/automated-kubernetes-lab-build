@@ -71,6 +71,37 @@ install_kubernetes_binaries() {
 }
 
 ################################################################################
+# Ensure container runtime is ready
+################################################################################
+ensure_container_runtime_ready() {
+    local node_ip=$1
+    local max_attempts=30
+    local delay=2
+    local attempt=1
+
+    log_info "Ensuring container runtime (containerd) is ready on: $node_ip"
+    
+    # Enable and start containerd
+    ssh_execute "$node_ip" "sudo systemctl enable containerd"
+    ssh_execute "$node_ip" "sudo systemctl start containerd"
+    
+    # Wait for containerd socket to be available
+    while [[ $attempt -le $max_attempts ]]; do
+        if ssh_execute "$node_ip" "test -S /var/run/containerd/containerd.sock" 2>/dev/null; then
+            log_success "Container runtime is ready: $node_ip"
+            return 0
+        fi
+        
+        log_debug "Waiting for container runtime socket. Attempt $attempt/$max_attempts"
+        sleep "$delay"
+        attempt=$((attempt + 1))
+    done
+    
+    log_error "Container runtime failed to become ready within timeout: $node_ip"
+    return 1
+}
+
+################################################################################
 # Initialize Kubernetes master node
 ################################################################################
 initialize_master() {
@@ -83,6 +114,12 @@ initialize_master() {
     
     # Install Kubernetes binaries
     install_kubernetes_binaries "$master_ip" "$k8s_version"
+    
+    # Ensure container runtime is ready
+    ensure_container_runtime_ready "$master_ip"
+    
+    # Enable and start kubelet
+    ssh_execute "$master_ip" "sudo systemctl enable kubelet"
     
     # Initialize kubeadm
     log_debug "Running kubeadm init on master..."
@@ -126,6 +163,12 @@ join_worker_node() {
     
     # Install Kubernetes binaries
     install_kubernetes_binaries "$worker_ip" "$k8s_version"
+    
+    # Ensure container runtime is ready
+    ensure_container_runtime_ready "$worker_ip"
+    
+    # Enable and start kubelet
+    ssh_execute "$worker_ip" "sudo systemctl enable kubelet"
     
     # Execute join command
     log_debug "Running kubeadm join on worker..."
