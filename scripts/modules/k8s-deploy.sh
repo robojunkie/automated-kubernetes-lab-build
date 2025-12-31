@@ -17,8 +17,11 @@ install_kubernetes_binaries() {
     # Create keyrings directory if it doesn't exist
     ssh_execute "$node_ip" "sudo mkdir -p /etc/apt/keyrings"
     
-    # Download Kubernetes GPG key (new repository location)
-    ssh_execute "$node_ip" "curl -fsSL https://pkgs.k8s.io/core:/stable:/v${k8s_version}/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg"
+    # Download and install Kubernetes GPG key using apt-key style but to keyrings
+    ssh_execute "$node_ip" "curl -fsSL https://pkgs.k8s.io/core:/stable:/v${k8s_version}/deb/Release.key | sudo tee /etc/apt/keyrings/kubernetes-apt-keyring.asc > /dev/null"
+    
+    # Convert to GPG format
+    ssh_execute "$node_ip" "cat /etc/apt/keyrings/kubernetes-apt-keyring.asc | sudo gpg --batch --yes --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg"
     
     # Add Kubernetes repository (new location)
     ssh_execute "$node_ip" "echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${k8s_version}/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list"
