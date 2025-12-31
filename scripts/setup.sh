@@ -8,12 +8,16 @@ set -e
 # Validate IPv4 address
 function validate_ip() {
   local ip=$1
-  local valid_ip_regex='^([0-9]{1,3}\\.){3}[0-9]{1,3}$'
 
+  # Regex to match valid IPv4 addresses
+  local valid_ip_regex='^(([0-9]{1,3})\.){3}([0-9]{1,3})$'
+
+  # Check if the format matches the regex
   if [[ $ip =~ $valid_ip_regex ]]; then
     IFS='.' read -r -a octets <<< "$ip"
     for octet in "${octets[@]}"; do
-      if ((octet > 255)); then
+      # Ensure each octet is in the range [0-255]
+      if ((octet < 0 || octet > 255)); then
         return 1
       fi
     done
@@ -74,7 +78,6 @@ function setup_kubernetes_repository() {
     sudo apt-get update && sudo apt-get install -y apt-transport-https curl
     curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
 
-    # Adjust repository distribution based on the detected version
     if [[ "$VERSION_CODENAME" == "focal" || "$VERSION_CODENAME" == "jammy" ]]; then
       echo "deb https://apt.kubernetes.io/ kubernetes-focal main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
     elif [[ "$VERSION_CODENAME" == "noble" ]]; then
