@@ -142,7 +142,7 @@ stop_conflicting_services() {
     ssh_execute "$node_ip" "sudo pkill -9 -f k3s || true" || log_warning "k3s kill attempt failed on $node_ip (ignored)"
 
     # Kill any remaining listeners on control-plane ports to avoid kubeadm bind errors
-    ssh_execute "$node_ip" "pids=\$(sudo ss -H -tulpn 2>/dev/null | awk '($5 ~ /:(6443|10250|10257|10259)$/){gsub(/pid=/,\"\");gsub(/,/,\"\");split($7,a,\"/\");print a[1]}' | sort -u); if [ -n \"$pids\" ]; then sudo kill -9 $pids 2>/dev/null || true; fi" || log_warning "Port cleanup failed on $node_ip (ignored)"
+    ssh_execute "$node_ip" "pids=\$(sudo ss -H -tulpn 2>/dev/null | awk '(\$5 ~ /:(6443|10250|10257|10259)$/){gsub(/pid=/,\"\");gsub(/,/,\"\");split(\$7,a,\"/\");print a[1]}' | sort -u); if [ -n \"\$pids\" ]; then sudo kill -9 \$pids 2>/dev/null || true; fi" || log_warning "Port cleanup failed on $node_ip (ignored)"
 }
 
 ################################################################################
