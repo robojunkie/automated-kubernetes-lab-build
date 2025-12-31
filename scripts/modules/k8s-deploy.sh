@@ -52,13 +52,12 @@ initialize_master() {
     ssh_execute "$master_ip" "sudo kubeadm init \
         --apiserver-advertise-address=$master_ip \
         --pod-network-cidr=$pod_cidr \
-        --kubernetes-version=v${k8s_version} \
         --ignore-preflight-errors=all"
     
     # Setup kubeconfig for root and default user
     log_debug "Setting up kubeconfig on master..."
     ssh_execute "$master_ip" "mkdir -p \$HOME/.kube"
-    ssh_execute "$master_ip" "sudo cp -i /etc/kubernetes/admin.conf \$HOME/.kube/config"
+    ssh_execute "$master_ip" "sudo cp -i /etc/kubernetes/admin.conf \$HOME/.kube/config 2>/dev/null || sudo cp /etc/kubernetes/admin.conf \$HOME/.kube/config"
     ssh_execute "$master_ip" "sudo chown \$(id -u):\$(id -g) \$HOME/.kube/config"
     
     log_success "Master node initialized: $master_node"
