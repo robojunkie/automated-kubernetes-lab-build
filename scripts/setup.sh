@@ -8,7 +8,7 @@ set -e
 # Validate IPv4 address
 function validate_ip() {
   local ip=$1
-  local valid_ip_regex='^([0-9]{1,3}\.){3}[0-9]{1,3}$'
+  local valid_ip_regex='^([0-9]{1,3}\\.){3}[0-9]{1,3}$'
 
   if [[ $ip =~ $valid_ip_regex ]]; then
     IFS='.' read -r -a octets <<< "$ip"
@@ -36,23 +36,18 @@ function get_master_node() {
   done
 }
 
-# Collect Worker Node IPs with validation
+# Collect Worker Node IPs from CSV
 function get_worker_nodes() {
-  echo "Enter the number of Worker Nodes:"
-  read -r WORKER_COUNT
-
-  WORKER_NODES=()
-  for i in $(seq 1 "$WORKER_COUNT"); do
-    while true; do
-      echo "Enter the hostname or IP for Worker Node $i:"
-      read -r WORKER_NODE
-      if validate_ip "$WORKER_NODE"; then
-        WORKER_NODES+=("$WORKER_NODE")
-        break
-      else
-        echo "Invalid IP address. Please enter a valid IPv4 address."
-      fi
-    done
+  while true; do
+    echo "Enter a comma-separated list of Worker Node IPs (e.g., 192.168.1.203,192.168.1.204,192.168.1.205):"
+    read -r WORKER_NODE_CSV
+    IFS=',' read -r -a WORKER_NODES <<< "$WORKER_NODE_CSV"
+    if [[ "${#WORKER_NODES[@]}" -gt 0 ]]; then
+      echo "Detected ${#WORKER_NODES[@]} worker nodes: ${WORKER_NODES[*]}"
+      break
+    else
+      echo "Invalid input. Please enter a valid comma-separated list of IP addresses."
+    fi
   done
 }
 
@@ -71,18 +66,48 @@ function get_pod_network_cidr() {
   done
 }
 
+# Setup Kubernetes Repository
+function setup_kubernetes_repository() {
+  echo "Setting up Kubernetes repository for the detected Linux distribution ($ID)..."
+
+  if [[ "$ID" == "ubuntu" || "$ID" == "debian" ]]; then
+    sudo apt-get update && sudo apt-get install -y apt-transport-https curl
+    curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+
+    # Adjust repository distribution based on the detected version
+    if [[ "$VERSION_CODENAME" == "focal" || "$VERSION_CODENAME" == "jammy" ]]; then
+      echo "deb https://apt.kubernetes.io/ kubernetes-focal main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+    elif [[ "$VERSION_CODENAME" == "noble" ]]; then
+      echo "deb https://apt.kubernetes.io/ kubernetes-noble main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+    else
+      echo "Unsupported Ubuntu distribution codename ($VERSION_CODENAME). Exiting."
+      exit 1
+    fi
+
+    sudo apt-get update
+  elif [[ "$ID" == "centos" || "$ID" == "fedora" || "$ID" == "rhel" ]]; then
+    sudo dnf config-manager --add-repo=https://packages.cloud.google.com/yum/repos/kubernetes-el7-x86_64
+    sudo dnf install -y kubeadm kubectl kubelet
+    sudo dnf update
+  else
+    echo "Unsupported Linux distribution ($ID). Exiting."
+    exit 1
+  fi
+}
+
 # Install Kubernetes Tools
 function install_kubernetes_tools() {
   echo "Installing Kubernetes tools (kubeadm, kubelet, kubectl)..."
 
-  sudo apt-get update && sudo apt-get install -y apt-transport-https curl
-  curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
-  echo "deb https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
-  sudo apt-get update
-  sudo apt-get install -y kubelet kubeadm kubectl
-  sudo apt-mark hold kubelet kubeadm kubectl
+  setup_kubernetes_repository
 
-  echo "Kubernetes tools installed successfully!"
+  if [[ "$ID" == "ubuntu" || "$ID" == "debian" ]]; then
+    sudo apt-get install -y kubeadm kubelet kubectl
+    sudo apt-mark hold kubelet kubeadm kubectl
+  elif [[ "$ID" == "centos" || "$ID" == "fedora" || "$ID" == "rhel" ]]; then
+    sudo dnf install -y kubeadm kubelet kubectl
+    sudo dnf mark hold kubelet kubeadm kubectl
+  fi
 }
 
 # Initialize Master Node
@@ -120,58 +145,6 @@ function join_worker_nodes() {
   done
 }
 
-# Cleanup Kubernetes and Container Tools
-function cleanup_remote_nodes() {
-  echo "Do you want to run the cleanup process on the nodes? (yes/no)"
-  read -r RUN_CLEANUP
-
-  if [[ "$RUN_CLEANUP" != "yes" ]]; then
-    echo "Skipping cleanup process. Proceeding without cleanup."
-    return
-  fi
-
-  echo "Starting cleanup process..."
-  for node in "$MASTER_NODE" "${WORKER_NODES[@]}"; do
-    echo "Connecting to node: $node"
-    ssh "$node" bash -s << 'ENDSSH'
-      set -e
-      echo "Cleaning node: $(hostname)"
-
-      # Stop Kubernetes and container runtimes
-      for service in kubelet containerd; do
-        if systemctl is-active --quiet "$service"; then
-          echo "Stopping $service..."
-          sudo systemctl stop "$service"
-        else
-          echo "$service is not running."
-        fi
-      done
-
-      # Remove Kubernetes tools if installed
-      echo "Checking and removing Kubernetes tools..."
-      if command -v kubeadm > /dev/null 2>&1; then
-        echo "Removing kubeadm, kubectl, and kubelet..."
-        sudo apt-get purge -y kubeadm kubectl kubelet || sudo dnf remove -y kubeadm kubectl kubelet
-      else
-        echo "Kubernetes tools are not installed."
-      fi
-
-      # Prune Docker or container runtimes
-      echo "Pruning Docker..."
-      if command -v docker > /dev/null 2>&1; then
-        sudo docker system prune -af || true
-      fi
-
-      # Clear Kubernetes directories
-      echo "Removing Kubernetes-related directories and volumes..."
-      sudo rm -rf /etc/kubernetes /var/lib/kubelet /var/lib/etcd || true
-
-      echo "Cleanup complete for $(hostname)."
-ENDSSH
-
-  done
-}
-
 # --- Main Logic ---
 function main() {
   echo "Welcome to the Kubernetes Jump Box Setup Script."
@@ -180,7 +153,7 @@ function main() {
   # Detect Linux distribution
   if [ -f /etc/os-release ]; then
     . /etc/os-release
-    echo "Linux distribution detected: $ID"
+    echo "Linux distribution detected: $ID ($VERSION_CODENAME)"
   else
     echo "Cannot determine the Linux distribution. Exiting."
     exit 1
@@ -194,7 +167,6 @@ function main() {
   echo "Worker Nodes: ${WORKER_NODES[*]}"
   echo "Pod Network CIDR: $POD_CIDR"
 
-  cleanup_remote_nodes
   install_kubernetes_tools
   initialize_master_node
   install_networking
