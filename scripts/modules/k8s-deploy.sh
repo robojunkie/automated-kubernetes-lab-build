@@ -168,9 +168,6 @@ wait_for_node_ready() {
 deploy_kubernetes() {
     local master_node=$1
     local master_ip=$2
-    shift 2
-    local worker_nodes=("${1}")
-    local worker_ips=("${2}")
     local k8s_version=$3
     
     log_info "Deploying Kubernetes cluster..."
@@ -191,9 +188,9 @@ deploy_kubernetes() {
     wait_for_node_ready "$master_node"
     
     # Join worker nodes
-    for i in "${!worker_nodes[@]}"; do
-        join_worker_node "${worker_nodes[$i]}" "${worker_ips[$i]}" "$join_token" "$k8s_version"
-        wait_for_node_ready "${worker_nodes[$i]}"
+    for i in "${!WORKER_NODES[@]}"; do
+        join_worker_node "${WORKER_NODES[$i]}" "${WORKER_IPS[$i]}" "$join_token" "$k8s_version"
+        wait_for_node_ready "${WORKER_NODES[$i]}"
     done
     
     log_success "Kubernetes cluster deployment completed"

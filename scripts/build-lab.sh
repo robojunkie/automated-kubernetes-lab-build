@@ -303,7 +303,7 @@ execute_deployment() {
     
     # Deploy Kubernetes
     log_info "Deploying Kubernetes cluster..."
-    deploy_kubernetes "$MASTER_NODE" "$MASTER_IP" "${WORKER_NODES[@]}" "${WORKER_IPS[@]}" "$K8S_VERSION"
+    deploy_kubernetes "$MASTER_NODE" "$MASTER_IP" "$K8S_VERSION"
     
     # Setup CNI
     log_info "Installing CNI plugin: $CNI_PLUGIN..."
