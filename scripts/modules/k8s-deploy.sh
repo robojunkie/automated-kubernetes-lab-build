@@ -26,7 +26,7 @@ install_kubernetes_binaries() {
     ssh_execute "$node_ip" "sudo mkdir -p -m 755 /etc/apt/keyrings"
     
     # Download Kubernetes GPG key with host fallbacks to avoid 403s from CDN
-    ssh_execute "$node_ip" "bash -c 'set -euo pipefail; \\
+    ssh_execute "$node_ip" "bash -c 'set -eo pipefail; \\
 hosts=(pkgs.k8s.io pkgs.kubernetes.io packages.kubernetes.io); \\
 for h in \"${hosts[@]}\"; do \\
     echo \"Attempting key download from https://$h/core:/stable:/v${k8s_version}/deb/Release.key\"; \\
