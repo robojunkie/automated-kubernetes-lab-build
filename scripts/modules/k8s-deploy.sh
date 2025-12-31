@@ -97,22 +97,31 @@ ensure_container_runtime_ready() {
         # Create containerd config directory if needed
         ssh_execute "$node_ip" "sudo mkdir -p /etc/containerd"
     
-        # Write containerd config with CRI enabled and systemd cgroup driver
-        ssh_execute "$node_ip" "sudo tee /etc/containerd/config.toml >/dev/null <<'EOF'
+                # Write containerd config with CRI enabled and systemd cgroup driver
+                ssh_execute "$node_ip" "sudo tee /etc/containerd/config.toml >/dev/null <<'EOF'
 version = 2
+disabled_plugins = []
+root = "/var/lib/containerd"
+state = "/run/containerd"
+[grpc]
+    address = "/run/containerd/containerd.sock"
 [plugins."io.containerd.grpc.v1.cri"]
     sandbox_image = "registry.k8s.io/pause:3.9"
+    [plugins."io.containerd.grpc.v1.cri".cni]
+        bin_dir = "/opt/cni/bin"
+        conf_dir = "/etc/cni/net.d"
     [plugins."io.containerd.grpc.v1.cri".containerd]
         snapshotter = "overlayfs"
-    [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
-        runtime_type = "io.containerd.runc.v2"
-        [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
-            SystemdCgroup = true
+        default_runtime_name = "runc"
+        [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+            runtime_type = "io.containerd.runc.v2"
+            [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+                SystemdCgroup = true
 EOF"
     
-        # Enable and restart containerd to load new config
-        ssh_execute "$node_ip" "sudo systemctl enable containerd"
-        ssh_execute "$node_ip" "sudo systemctl restart containerd"
+                # Enable and restart containerd to load new config
+                ssh_execute "$node_ip" "sudo systemctl enable containerd"
+                ssh_execute "$node_ip" "sudo systemctl restart containerd"
     
     # Wait for containerd socket to be available
     while [[ $attempt -le $max_attempts ]]; do
