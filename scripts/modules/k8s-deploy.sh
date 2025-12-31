@@ -25,19 +25,38 @@ install_kubernetes_binaries() {
     # Create keyrings directory if it doesn't exist
     ssh_execute "$node_ip" "sudo mkdir -p -m 755 /etc/apt/keyrings"
     
-    # Download Kubernetes GPG key with simple chained fallbacks (no loops to avoid nounset issues)
-        ssh_execute "$node_ip" "k8s_version=${k8s_version}; rm -f /tmp/k8s-key.asc; \
-download() { host=$1; echo \"Attempting key download from https://$host/core:/stable:/v${k8s_version}/deb/Release.key\"; \
-    curl -4fsSL --retry 3 --retry-delay 1 -H 'User-Agent: apt' https://$host/core:/stable:/v${k8s_version}/deb/Release.key -o /tmp/k8s-key.asc; }; \
-download pkgs.k8s.io || download pkgs.kubernetes.io || download packages.kubernetes.io || { echo 'Unable to download Kubernetes apt key from any mirror'; exit 1; }"
+        # Download Kubernetes GPG key locally (avoids remote shell pitfalls) with mirror fallbacks
+        local tmp_key="/tmp/k8s-key.asc"
+        rm -f "$tmp_key"
 
-    # Convert to GPG format without interactive prompts
-    ssh_execute "$node_ip" "sudo gpg --batch --yes --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg /tmp/k8s-key.asc"
-    ssh_execute "$node_ip" "sudo chmod 644 /etc/apt/keyrings/kubernetes-apt-keyring.gpg"
+        local key_url_base="core:/stable:/v${k8s_version}/deb/Release.key"
+        local key_hosts=(pkgs.k8s.io pkgs.kubernetes.io packages.kubernetes.io)
+        local key_downloaded=false
 
-    # Clean up temp file
-    ssh_execute "$node_ip" "rm -f /tmp/k8s-key.asc"
-    
+        for host in "${key_hosts[@]}"; do
+            log_info "Attempting key download from https://${host}/${key_url_base}"
+            if curl -4fsSL --retry 3 --retry-delay 1 -H "User-Agent: apt" "https://${host}/${key_url_base}" -o "$tmp_key"; then
+                log_debug "Key download succeeded from ${host}"
+                key_downloaded=true
+                break
+            else
+                log_warning "Key download failed from ${host}; trying next mirror..."
+            fi
+        done
+
+        if [[ "$key_downloaded" != true || ! -s "$tmp_key" ]]; then
+            log_error "Unable to download Kubernetes apt key from any mirror"
+            rm -f "$tmp_key"
+            exit 1
+        fi
+
+        # Copy key to target node and convert
+        scp_to_remote "$tmp_key" "$node_ip" "/tmp/k8s-key.asc"
+        ssh_execute "$node_ip" "sudo gpg --batch --yes --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg /tmp/k8s-key.asc"
+        ssh_execute "$node_ip" "sudo chmod 644 /etc/apt/keyrings/kubernetes-apt-keyring.gpg"
+        ssh_execute "$node_ip" "rm -f /tmp/k8s-key.asc"
+        rm -f "$tmp_key"
+
     # Add Kubernetes repository (primary host); mirror can be swapped manually if needed
     ssh_execute "$node_ip" "echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${k8s_version}/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list"
     
