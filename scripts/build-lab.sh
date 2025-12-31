@@ -40,6 +40,7 @@ PUBLIC_CONTAINERS=false
 K8S_VERSION="1.28"
 CNI_PLUGIN="calico"
 KUBECONFIG_PATH=""
+SSH_KEY=""
 LOG_FILE="${PROJECT_ROOT}/deployment.log"
 DRY_RUN=false
 
@@ -206,6 +207,24 @@ collect_user_input() {
     read -r -p "Enter Kubernetes version [default: 1.28]: " K8S_VERSION
     K8S_VERSION="${K8S_VERSION:-1.28}"
     validate_k8s_version "$K8S_VERSION"
+    
+    # SSH Key Configuration
+    echo -e "\n${BLUE}SSH Configuration:${NC}"
+    read -r -p "Enter SSH key path (leave empty for default ~/.ssh/id_rsa): " SSH_KEY
+    SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_rsa}"
+    
+    if [[ -f "$SSH_KEY" ]]; then
+        log_success "SSH key found: $SSH_KEY"
+        export SSH_KEY
+    else
+        log_warning "SSH key not found at: $SSH_KEY"
+        read -r -p "Continue without specifying key (use SSH agent/default)? [y/N]: " continue_without_key
+        if [[ ! "$continue_without_key" =~ ^[Yy]$ ]]; then
+            log_error "Please configure SSH key and try again"
+            exit 1
+        fi
+        SSH_KEY=""
+    fi
     
     # CNI plugin choice
     read -r -p "Select CNI plugin (calico|flannel|weave) [default: calico]: " CNI_PLUGIN

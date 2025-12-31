@@ -34,7 +34,7 @@ install_kubernetes_binaries() {
     # Clean up temp file
     ssh_execute "$node_ip" "rm -f /tmp/k8s-key.asc"
     
-    # Add Kubernetes repository
+    # Add Kubernetes repository  
     ssh_execute "$node_ip" "echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${k8s_version}/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list"
     
     # Update package list

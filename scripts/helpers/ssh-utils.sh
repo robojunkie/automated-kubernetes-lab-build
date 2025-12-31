@@ -11,10 +11,16 @@
 check_ssh_connectivity() {
     local host=$1
     local timeout=${2:-10}
+    local ssh_opts="-o ConnectTimeout=$timeout -o StrictHostKeyChecking=accept-new"
+    
+    # Add SSH key if specified
+    if [[ -n "$SSH_KEY" && -f "$SSH_KEY" ]]; then
+        ssh_opts="$ssh_opts -i $SSH_KEY"
+    fi
     
     log_debug "Checking SSH connectivity to: $host"
     
-    if ssh -o ConnectTimeout=$timeout -o StrictHostKeyChecking=accept-new "$host" "echo 'SSH test'" &> /dev/null; then
+    if ssh $ssh_opts "$host" "echo 'SSH test'" &> /dev/null; then
         log_debug "SSH connectivity OK: $host"
         return 0
     else
@@ -30,10 +36,16 @@ ssh_execute() {
     local host=$1
     shift
     local command="$@"
+    local ssh_opts="-o StrictHostKeyChecking=accept-new"
+    
+    # Add SSH key if specified
+    if [[ -n "$SSH_KEY" && -f "$SSH_KEY" ]]; then
+        ssh_opts="$ssh_opts -i $SSH_KEY"
+    fi
     
     log_debug "Executing on $host: $command"
     
-    ssh -o StrictHostKeyChecking=accept-new "$host" "$command"
+    ssh $ssh_opts "$host" "$command"
 }
 
 ################################################################################
@@ -43,10 +55,16 @@ scp_to_remote() {
     local local_file=$1
     local remote_host=$2
     local remote_path=$3
+    local scp_opts="-o StrictHostKeyChecking=accept-new"
+    
+    # Add SSH key if specified
+    if [[ -n "$SSH_KEY" && -f "$SSH_KEY" ]]; then
+        scp_opts="$scp_opts -i $SSH_KEY"
+    fi
     
     log_debug "Copying to remote: $local_file -> $remote_host:$remote_path"
     
-    scp -o StrictHostKeyChecking=accept-new "$local_file" "$remote_host:$remote_path"
+    scp $scp_opts "$local_file" "$remote_host:$remote_path"
 }
 
 ################################################################################
@@ -56,10 +74,16 @@ scp_from_remote() {
     local remote_host=$1
     local remote_file=$2
     local local_path=$3
+    local scp_opts="-o StrictHostKeyChecking=accept-new"
+    
+    # Add SSH key if specified
+    if [[ -n "$SSH_KEY" && -f "$SSH_KEY" ]]; then
+        scp_opts="$scp_opts -i $SSH_KEY"
+    fi
     
     log_debug "Copying from remote: $remote_host:$remote_file -> $local_path"
     
-    scp -o StrictHostKeyChecking=accept-new "$remote_host:$remote_file" "$local_path"
+    scp $scp_opts "$remote_host:$remote_file" "$local_path"
 }
 
 ################################################################################
