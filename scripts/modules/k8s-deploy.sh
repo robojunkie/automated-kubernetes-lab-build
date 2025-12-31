@@ -14,6 +14,10 @@ install_kubernetes_binaries() {
     
     log_debug "Installing Kubernetes binaries on: $node_ip (version: $k8s_version)"
     
+    # Remove old Kubernetes repository if it exists
+    ssh_execute "$node_ip" "sudo rm -f /etc/apt/sources.list.d/kubernetes.list"
+    ssh_execute "$node_ip" "sudo rm -f /etc/apt/keyrings/kubernetes-archive-keyring.gpg"
+    
     # Ensure required packages are installed
     ssh_execute "$node_ip" "sudo apt-get update && sudo apt-get install -y apt-transport-https ca-certificates curl gpg"
     
