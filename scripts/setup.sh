@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Setup script for configuring the jump box, SSH connectivity, and cleaning up remote nodes dynamically.
+# Setup script for configuring the jump box, SSH connectivity, Kubernetes installation, and networking setup dynamically.
 set -e
 
 # --- Helper Functions ---
@@ -56,7 +56,71 @@ function get_worker_nodes() {
   done
 }
 
-# Cleanup Logic for Kubernetes and Container Tools
+# Prompt for Network CIDR
+function get_pod_network_cidr() {
+  while true; do
+    echo "Enter the pod network CIDR (default: 192.168.0.0/16):"
+    read -r POD_CIDR
+    POD_CIDR=${POD_CIDR:-192.168.0.0/16}
+
+    if [[ $POD_CIDR =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$ ]]; then
+      break
+    else
+      echo "Invalid CIDR format. Please enter a valid IPv4 CIDR."
+    fi
+  done
+}
+
+# Install Kubernetes Tools
+function install_kubernetes_tools() {
+  echo "Installing Kubernetes tools (kubeadm, kubelet, kubectl)..."
+
+  sudo apt-get update && sudo apt-get install -y apt-transport-https curl
+  curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+  echo "deb https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+  sudo apt-get update
+  sudo apt-get install -y kubelet kubeadm kubectl
+  sudo apt-mark hold kubelet kubeadm kubectl
+
+  echo "Kubernetes tools installed successfully!"
+}
+
+# Initialize Master Node
+function initialize_master_node() {
+  echo "Initializing Kubernetes master node with pod network CIDR $POD_CIDR..."
+
+  sudo kubeadm init --pod-network-cidr="$POD_CIDR"
+
+  echo "Configuring kubectl on the master node..."
+  mkdir -p $HOME/.kube
+  sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+  sudo chown $(id -u):$(id -g) $HOME/.kube/config
+}
+
+# Install Networking (Calico)
+function install_networking() {
+  echo "Installing Calico networking..."
+  kubectl apply -f https://docs.projectcalico.org/v3.25/manifests/calico.yaml
+
+  echo "Networking setup is complete!"
+}
+
+# Generate the Join Token for Workers
+function generate_worker_join_command() {
+  echo "Generating join command for worker nodes..."
+  JOIN_COMMAND=$(sudo kubeadm token create --print-join-command)
+  echo "Join command generated: $JOIN_COMMAND"
+}
+
+# Join Worker Nodes
+function join_worker_nodes() {
+  for node in "${WORKER_NODES[@]}"; do
+    echo "Joining worker node: $node to the cluster..."
+    ssh "$node" "$JOIN_COMMAND"
+  done
+}
+
+# Cleanup Kubernetes and Container Tools
 function cleanup_remote_nodes() {
   echo "Do you want to run the cleanup process on the nodes? (yes/no)"
   read -r RUN_CLEANUP
@@ -108,7 +172,6 @@ ENDSSH
   done
 }
 
-
 # --- Main Logic ---
 function main() {
   echo "Welcome to the Kubernetes Jump Box Setup Script."
@@ -125,13 +188,20 @@ function main() {
 
   get_master_node
   get_worker_nodes
+  get_pod_network_cidr
 
   echo "Master Node: $MASTER_NODE"
   echo "Worker Nodes: ${WORKER_NODES[*]}"
+  echo "Pod Network CIDR: $POD_CIDR"
 
   cleanup_remote_nodes
+  install_kubernetes_tools
+  initialize_master_node
+  install_networking
+  generate_worker_join_command
+  join_worker_nodes
 
-  echo "Setup completed successfully."
+  echo "Setup completed successfully!"
 }
 
 main
