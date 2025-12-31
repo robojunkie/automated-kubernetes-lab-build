@@ -28,13 +28,13 @@ install_kubernetes_binaries() {
     # Download Kubernetes GPG key with host fallbacks to avoid 403s from CDN
     ssh_execute "$node_ip" "bash -c '
 hosts="pkgs.k8s.io pkgs.kubernetes.io packages.kubernetes.io"
-for h in $hosts; do
-    echo "Attempting key download from https://$h/core:/stable:/v${k8s_version}/deb/Release.key"
-    if curl -fsSL https://$h/core:/stable:/v${k8s_version}/deb/Release.key -o /tmp/k8s-key.asc; then
-        echo "Key download succeeded from $h"
+for h in \$hosts; do
+    echo "Attempting key download from https://\$h/core:/stable:/v${k8s_version}/deb/Release.key"
+    if curl -fsSL https://\$h/core:/stable:/v${k8s_version}/deb/Release.key -o /tmp/k8s-key.asc; then
+        echo "Key download succeeded from \$h"
         break
     else
-        echo "Key download failed from $h; trying next mirror..."
+        echo "Key download failed from \$h; trying next mirror..."
         rm -f /tmp/k8s-key.asc
     fi
 done
