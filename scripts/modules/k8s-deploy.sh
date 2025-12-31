@@ -274,6 +274,14 @@ deploy_kubernetes() {
     # Initialize master
     initialize_master "$master_node" "$master_ip" "10.244.0.0/16" "$k8s_version"
     
+    # Setup CNI (Calico by default)
+    log_info "Deploying CNI plugin..."
+    setup_cni "${CNI_PLUGIN:-calico}" "10.244.0.0/16"
+    
+    # Wait for master to be ready (with CNI deployed)
+    # Note: This requires kubectl to be configured properly
+    wait_for_node_ready "$master_node" 120 10
+    
     # Get join token
     local join_token=$(get_join_token "$master_ip")
     
@@ -282,14 +290,10 @@ deploy_kubernetes() {
         return 1
     fi
     
-    # Wait for master to be ready
-    # Note: This requires kubectl to be configured properly
-    wait_for_node_ready "$master_node"
-    
     # Join worker nodes
     for i in "${!WORKER_NODES[@]}"; do
         join_worker_node "${WORKER_NODES[$i]}" "${WORKER_IPS[$i]}" "$join_token" "$k8s_version"
-        wait_for_node_ready "${WORKER_NODES[$i]}"
+        wait_for_node_ready "${WORKER_NODES[$i]}" 120 10
     done
     
     log_success "Kubernetes cluster deployment completed"
