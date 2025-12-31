@@ -121,7 +121,9 @@ EOF"
     
                 # Enable and restart containerd to load new config
                 ssh_execute "$node_ip" "sudo systemctl enable containerd"
-                ssh_execute "$node_ip" "sudo systemctl restart containerd"
+                ssh_execute "$node_ip" "sudo systemctl daemon-reload"
+                # Restart may return non-zero if already active; tolerate and verify via socket check
+                ssh_execute "$node_ip" "sudo systemctl restart containerd || true"
     
     # Wait for containerd socket to be available
     while [[ $attempt -le $max_attempts ]]; do
