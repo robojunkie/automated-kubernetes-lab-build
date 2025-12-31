@@ -14,22 +14,22 @@ install_kubernetes_binaries() {
     
     log_debug "Installing Kubernetes binaries on: $node_ip (version: $k8s_version)"
     
+    # Ensure required packages are installed
+    ssh_execute "$node_ip" "sudo apt-get update && sudo apt-get install -y apt-transport-https ca-certificates curl gpg"
+    
     # Create keyrings directory if it doesn't exist
-    ssh_execute "$node_ip" "sudo mkdir -p /etc/apt/keyrings"
+    ssh_execute "$node_ip" "sudo mkdir -p -m 755 /etc/apt/keyrings"
     
-    # Download and install Kubernetes GPG key using apt-key style but to keyrings
-    ssh_execute "$node_ip" "curl -fsSL https://pkgs.k8s.io/core:/stable:/v${k8s_version}/deb/Release.key | sudo tee /etc/apt/keyrings/kubernetes-apt-keyring.asc > /dev/null"
+    # Download and add Kubernetes GPG key
+    ssh_execute "$node_ip" "curl -fsSL https://pkgs.k8s.io/core:/stable:/v${k8s_version}/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg"
     
-    # Convert to GPG format
-    ssh_execute "$node_ip" "cat /etc/apt/keyrings/kubernetes-apt-keyring.asc | sudo gpg --batch --yes --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg"
-    
-    # Add Kubernetes repository (new location)
+    # Add Kubernetes repository
     ssh_execute "$node_ip" "echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${k8s_version}/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list"
     
     # Update package list
     ssh_execute "$node_ip" "sudo apt-get update"
     
-    # Install Kubernetes components (without version suffix since new repo is version-specific)
+    # Install Kubernetes components
     ssh_execute "$node_ip" "sudo apt-get install -y kubelet kubeadm kubectl"
     
     # Hold packages at current version
