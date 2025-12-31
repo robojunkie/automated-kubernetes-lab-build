@@ -19,10 +19,10 @@ cleanup_remote_nodes() {
     echo "Executing cleanup on node: $node"
     ssh -o StrictHostKeyChecking=no $node 'bash -s' << 'ENDSSH'
       set -e
-      echo "Cleaning up on \\\$HOSTNAME"
+      echo "Cleaning up on \$HOSTNAME"
       docker ps -q | xargs --no-run-if-empty docker kill
       docker system prune -af
-    ENDSSH
+ENDSSH
   done
 }
 
