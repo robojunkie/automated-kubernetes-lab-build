@@ -124,6 +124,28 @@ ensure_container_runtime_ready() {
 }
 
 ################################################################################
+# Stop common conflicting services and free control-plane ports
+################################################################################
+stop_conflicting_services() {
+    local node_ip=$1
+    # Allow users to opt out by exporting STOP_CONFLICTING_SERVICES=false
+    local stop_conflicting=${STOP_CONFLICTING_SERVICES:-true}
+
+    if [[ "$stop_conflicting" != "true" ]]; then
+        log_info "Skipping conflicting service shutdown on $node_ip (STOP_CONFLICTING_SERVICES=false)"
+        return 0
+    fi
+
+    # Stop/disable common single-node distros or previous runs that occupy control-plane ports
+    ssh_execute "$node_ip" "sudo systemctl stop kubelet k3s k3s-agent microk8s 2>/dev/null || true"
+    ssh_execute "$node_ip" "sudo systemctl disable k3s k3s-agent microk8s 2>/dev/null || true"
+    ssh_execute "$node_ip" "sudo pkill -9 -f k3s || true"
+
+    # Kill any remaining listeners on control-plane ports to avoid kubeadm bind errors
+    ssh_execute "$node_ip" "pids=\$(sudo ss -H -tulpn 2>/dev/null | awk '($5 ~ /:(6443|10250|10257|10259)$/){gsub(/pid=/,\"\");gsub(/,/,\"\");split($7,a,\"/\");print a[1]}' | sort -u); if [ -n \"$pids\" ]; then sudo kill -9 $pids 2>/dev/null || true; fi"
+}
+
+################################################################################
 # Initialize Kubernetes master node
 ################################################################################
 initialize_master() {
@@ -140,15 +162,9 @@ initialize_master() {
     # Ensure container runtime is ready
     ensure_container_runtime_ready "$master_ip"
     
-    # Reset any previous kubeadm state and ensure kubelet is fully stopped so ports are free
+    # Reset any previous kubeadm state and ensure nothing else holds control-plane ports
     log_info "Cleaning up any previous Kubernetes state..."
-    # Stop/disable any k3s that may occupy control-plane ports
-    ssh_execute "$master_ip" "sudo systemctl stop k3s k3s-agent 2>/dev/null || true"
-    ssh_execute "$master_ip" "sudo systemctl disable k3s k3s-agent 2>/dev/null || true"
-    ssh_execute "$master_ip" "sudo pkill -9 -f k3s || true"
-    ssh_execute "$master_ip" "sudo rm -f /etc/systemd/system/k3s.service /etc/systemd/system/k3s-agent.service"
-    ssh_execute "$master_ip" "sudo systemctl daemon-reload || true"
-
+    stop_conflicting_services "$master_ip"
     ssh_execute "$master_ip" "sudo systemctl stop kubelet || true"
     ssh_execute "$master_ip" "sudo systemctl reset-failed kubelet || true"
     ssh_execute "$master_ip" "sudo pkill -9 -f kubelet || true"
