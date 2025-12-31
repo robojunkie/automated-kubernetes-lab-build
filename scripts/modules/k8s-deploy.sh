@@ -140,6 +140,11 @@ initialize_master() {
     # Ensure container runtime is ready
     ensure_container_runtime_ready "$master_ip"
     
+    # Reset any previous kubeadm state
+    log_info "Cleaning up any previous Kubernetes state..."
+    ssh_execute "$master_ip" "sudo kubeadm reset -f || true"
+    ssh_execute "$master_ip" "sudo rm -rf /etc/cni/net.d/* /var/lib/etcd/* ~/.kube || true"
+    
     # Enable and start kubelet
     ssh_execute "$master_ip" "sudo systemctl enable kubelet"
     
