@@ -137,12 +137,12 @@ stop_conflicting_services() {
     fi
 
     # Stop/disable common single-node distros or previous runs that occupy control-plane ports
-    ssh_execute "$node_ip" "sudo systemctl stop kubelet k3s k3s-agent microk8s 2>/dev/null || true"
-    ssh_execute "$node_ip" "sudo systemctl disable k3s k3s-agent microk8s 2>/dev/null || true"
-    ssh_execute "$node_ip" "sudo pkill -9 -f k3s || true"
+    ssh_execute "$node_ip" "sudo systemctl stop kubelet k3s k3s-agent microk8s 2>/dev/null || true" || log_warning "Unable to stop conflicting services on $node_ip (ignored)"
+    ssh_execute "$node_ip" "sudo systemctl disable k3s k3s-agent microk8s 2>/dev/null || true" || log_warning "Unable to disable conflicting services on $node_ip (ignored)"
+    ssh_execute "$node_ip" "sudo pkill -9 -f k3s || true" || log_warning "k3s kill attempt failed on $node_ip (ignored)"
 
     # Kill any remaining listeners on control-plane ports to avoid kubeadm bind errors
-    ssh_execute "$node_ip" "pids=\$(sudo ss -H -tulpn 2>/dev/null | awk '($5 ~ /:(6443|10250|10257|10259)$/){gsub(/pid=/,\"\");gsub(/,/,\"\");split($7,a,\"/\");print a[1]}' | sort -u); if [ -n \"$pids\" ]; then sudo kill -9 $pids 2>/dev/null || true; fi"
+    ssh_execute "$node_ip" "pids=\$(sudo ss -H -tulpn 2>/dev/null | awk '($5 ~ /:(6443|10250|10257|10259)$/){gsub(/pid=/,\"\");gsub(/,/,\"\");split($7,a,\"/\");print a[1]}' | sort -u); if [ -n \"$pids\" ]; then sudo kill -9 $pids 2>/dev/null || true; fi" || log_warning "Port cleanup failed on $node_ip (ignored)"
 }
 
 ################################################################################
@@ -164,7 +164,7 @@ initialize_master() {
     
     # Reset any previous kubeadm state and ensure nothing else holds control-plane ports
     log_info "Cleaning up any previous Kubernetes state..."
-    stop_conflicting_services "$master_ip"
+    stop_conflicting_services "$master_ip" || log_warning "Conflicting service cleanup reported errors; continuing"
     ssh_execute "$master_ip" "sudo systemctl stop kubelet || true"
     ssh_execute "$master_ip" "sudo systemctl reset-failed kubelet || true"
     ssh_execute "$master_ip" "sudo pkill -9 -f kubelet || true"
