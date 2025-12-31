@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: calico-config
+  namespace: kube-system
+data:
+  calico_backend: vxlan
+  veth_mtu: "1450"
+  typha_service_name: typha
+  enable_bgp: "true"
+  log_level: info
+  enable_ipip: "false"
