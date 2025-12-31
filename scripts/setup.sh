@@ -1,67 +1,86 @@
 #!/bin/bash
 
-# Setup script for configuring the jump box and cleaning up remote nodes dynamically.
+# Setup script for configuring the jump box, SSH connectivity, and cleaning up remote nodes dynamically.
 set -e
 
+# --- Functions ---
+
 # Determine the Linux distribution
-if [ -f /etc/os-release ]; then
+function detect_linux_distro() {
+  if [ -f /etc/os-release ]; then
     . /etc/os-release
     OS=$ID
-else
+  else
     echo "Cannot determine the Linux distribution. Exiting."
     exit 1
-fi
+  fi
+}
 
-# Define cleanup function for remote nodes
-cleanup_remote_nodes() {
-  local node_list=($(kubectl get nodes --no-headers -o custom-columns=":metadata.name"))
-  for node in "${node_list[@]}"; do
-    echo "Executing cleanup on node: $node"
-    ssh -o StrictHostKeyChecking=no $node 'bash -s' << 'ENDSSH'
-      set -e
-      echo "Cleaning up on \$HOSTNAME"
-      docker ps -q | xargs --no-run-if-empty docker kill
-      docker system prune -af
-ENDSSH
+# Prompt user to configure SSH
+function configure_ssh() {
+  echo "Do you need help setting up SSH connectivity to the nodes? (yes/no)"
+  read -r ssh_help
+
+  if [[ "$ssh_help" == "yes" ]]; then
+    echo "Let’s configure SSH connectivity."
+    echo "Step 1: Generate an SSH key (if you don't have one):"
+    echo "  Command: ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa"
+    echo "Step 2: Copy the public key to the remote nodes:"
+    echo "  Command: ssh-copy-id -i ~/.ssh/id_rsa.pub username@remote-host"
+    echo "Step 3: Verify SSH works:"
+    echo "  Command: ssh username@remote-host"
+    echo ""
+    echo "Run these steps and re-run this script once SSH is configured. Exiting for now."
+    exit 0
+  else
+    echo "Assuming SSH connectivity is already set up. Let’s proceed."
+  fi
+}
+
+# Run cleanup commands on remote nodes
+function cleanup_remote_nodes() {
+  echo "Enter the Master Node hostname or IP:"
+  read -r MASTER_NODE
+
+  echo "Enter the number of Worker Nodes:"
+  read -r WORKER_COUNT
+
+  WORKER_NODES=()
+  for i in $(seq 1 "$WORKER_COUNT"); do
+    echo "Enter the hostname or IP for Worker Node $i:"
+    read -r WORKER_NODE
+    WORKER_NODES+=("$WORKER_NODE")
   done
+
+  echo "Do you want to run the cleanup script on the nodes? (this removes old Kubernetes resources) (yes/no)"
+  read -r RUN_CLEANUP
+
+  if [[ "$RUN_CLEANUP" == "yes" ]]; then
+    echo "Running cleanup on Master Node..."
+    ssh "$MASTER_NODE" 'bash -s' < ./scripts/cleanup.sh || echo "Failed to clean Master Node."
+
+    for NODE in "${WORKER_NODES[@]}"; do
+      echo "Running cleanup on Worker Node: $NODE..."
+      ssh "$NODE" 'bash -s' < ./scripts/cleanup.sh || echo "Failed to clean Worker Node: $NODE"
+    done
+  else
+    echo "Skipping cleanup process. Proceeding without cleanup."
+  fi
 }
 
-# Configure SSH
-configure_ssh() {
-  echo "Configuring SSH..."
-  mkdir -p ~/.ssh
-  chmod 700 ~/.ssh
-  # Add additional SSH configuration here as required
-}
+# --- Main Code ---
 
-# Main setup logic
-main() {
-  echo "Linux distribution detected: $OS"
+echo "Welcome to the Kubernetes Jump Box Setup Script."
+echo "This script will help set up your jump box and remotely clean Kubernetes nodes."
 
-  # Jump box setup specific steps
-  echo "Setting up the jump box..."
-  case "$OS" in
-    ubuntu)
-      sudo apt-get update && sudo apt-get install -y sshpass docker.io
-      ;;
-    almalinux|rocky)
-      sudo dnf install -y epel-release && sudo dnf install -y sshpass docker
-      ;;
-    *)
-      echo "Unsupported Linux distribution: $OS"
-      exit 1
-      ;;
-  esac
+# Detect Linux distribution
+detect_linux_distro
+echo "Linux distribution detected: $OS"
 
-  # Additional setup steps can be added here
+# Configure SSH connectivity
+configure_ssh
 
-  # Invoke SSH configuration
-  configure_ssh
+# Perform remote node cleanup
+cleanup_remote_nodes
 
-  # Invoke remote node cleanup
-  cleanup_remote_nodes
-
-  echo "Setup completed successfully."
-}
-
-main "$@"
+echo "Setup completed successfully."
