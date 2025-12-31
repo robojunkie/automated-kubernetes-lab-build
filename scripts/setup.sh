@@ -8,11 +8,8 @@ set -e
 # Validate IPv4 address
 function validate_ip() {
   local ip=$1
-
-  # Regex to match valid IPv4 addresses
   local valid_ip_regex='^(([0-9]{1,3})\.){3}([0-9]{1,3})$'
 
-  # Check if the format matches the regex
   if [[ $ip =~ $valid_ip_regex ]]; then
     IFS='.' read -r -a octets <<< "$ip"
     for octet in "${octets[@]}"; do
@@ -70,6 +67,50 @@ function get_pod_network_cidr() {
   done
 }
 
+# Cleanup Logic
+function cleanup_remote_nodes() {
+  echo "Do you want to run the cleanup process on the nodes? (yes/no)"
+  read -r RUN_CLEANUP
+
+  if [[ "$RUN_CLEANUP" != "yes" ]]; then
+    echo "Skipping cleanup process. Proceeding without cleanup."
+    return
+  fi
+
+  echo "Starting cleanup process..."
+  for node in "$MASTER_NODE" "${WORKER_NODES[@]}"; do
+    echo "Connecting to node: $node"
+    ssh "$node" bash -s << 'ENDSSH'
+      set -e
+      echo "Cleaning node: $(hostname)"
+
+      # Stop Kubernetes and container runtimes
+      for service in kubelet containerd; do
+        if systemctl is-active --quiet "$service"; then
+          echo "Stopping $service..."
+          sudo systemctl stop "$service"
+        else
+          echo "$service is not running."
+        fi
+      done
+
+      # Remove Kubernetes tools if installed
+      echo "Checking and removing Kubernetes tools..."
+      if command -v kubeadm > /dev/null 2>&1; then
+        echo "Removing kubeadm, kubectl, and kubelet..."
+        sudo apt-get purge -y kubeadm kubectl kubelet || sudo dnf remove -y kubeadm kubectl kubelet
+      else
+        echo "Kubernetes tools are not installed."
+      fi
+
+      # Clear Kubernetes directories
+      echo "Removing Kubernetes-related directories..."
+      sudo rm -rf /etc/kubernetes /var/lib/kubelet /var/lib/etcd || true
+ENDSSH
+
+  done
+}
+
 # Setup Kubernetes Repository
 function setup_kubernetes_repository() {
   echo "Setting up Kubernetes repository for the detected Linux distribution ($ID)..."
@@ -78,16 +119,15 @@ function setup_kubernetes_repository() {
     sudo apt-get update && sudo apt-get install -y apt-transport-https curl
     curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
 
-    if [[ "$VERSION_CODENAME" == "focal" || "$VERSION_CODENAME" == "jammy" ]]; then
+    # Attempt repository setup dynamically
+    if [[ "$VERSION_CODENAME" == "noble" ]]; then
+      echo "Repository for 'noble' not found, using fallback: kubernetes-focal"
       echo "deb https://apt.kubernetes.io/ kubernetes-focal main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
-    elif [[ "$VERSION_CODENAME" == "noble" ]]; then
-      echo "deb https://apt.kubernetes.io/ kubernetes-noble main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
     else
-      echo "Unsupported Ubuntu distribution codename ($VERSION_CODENAME). Exiting."
-      exit 1
+      echo "deb https://apt.kubernetes.io/ kubernetes-$VERSION_CODENAME main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
     fi
 
-    sudo apt-get update
+    sudo apt-get update || (echo "Repository setup failed. Exiting." && exit 1)
   elif [[ "$ID" == "centos" || "$ID" == "fedora" || "$ID" == "rhel" ]]; then
     sudo dnf config-manager --add-repo=https://packages.cloud.google.com/yum/repos/kubernetes-el7-x86_64
     sudo dnf install -y kubeadm kubectl kubelet
@@ -101,22 +141,14 @@ function setup_kubernetes_repository() {
 # Install Kubernetes Tools
 function install_kubernetes_tools() {
   echo "Installing Kubernetes tools (kubeadm, kubelet, kubectl)..."
-
   setup_kubernetes_repository
 
-  if [[ "$ID" == "ubuntu" || "$ID" == "debian" ]]; then
-    sudo apt-get install -y kubeadm kubelet kubectl
-    sudo apt-mark hold kubelet kubeadm kubectl
-  elif [[ "$ID" == "centos" || "$ID" == "fedora" || "$ID" == "rhel" ]]; then
-    sudo dnf install -y kubeadm kubelet kubectl
-    sudo dnf mark hold kubelet kubeadm kubectl
-  fi
+  sudo apt-get install -y kubeadm kubelet kubectl
 }
 
 # Initialize Master Node
 function initialize_master_node() {
   echo "Initializing Kubernetes master node with pod network CIDR $POD_CIDR..."
-
   sudo kubeadm init --pod-network-cidr="$POD_CIDR"
 
   echo "Configuring kubectl on the master node..."
@@ -125,33 +157,9 @@ function initialize_master_node() {
   sudo chown $(id -u):$(id -g) $HOME/.kube/config
 }
 
-# Install Networking (Calico)
-function install_networking() {
-  echo "Installing Calico networking..."
-  kubectl apply -f https://docs.projectcalico.org/v3.25/manifests/calico.yaml
-
-  echo "Networking setup is complete!"
-}
-
-# Generate the Join Token for Workers
-function generate_worker_join_command() {
-  echo "Generating join command for worker nodes..."
-  JOIN_COMMAND=$(sudo kubeadm token create --print-join-command)
-  echo "Join command generated: $JOIN_COMMAND"
-}
-
-# Join Worker Nodes
-function join_worker_nodes() {
-  for node in "${WORKER_NODES[@]}"; do
-    echo "Joining worker node: $node to the cluster..."
-    ssh "$node" "$JOIN_COMMAND"
-  done
-}
-
-# --- Main Logic ---
+# Main Logic
 function main() {
   echo "Welcome to the Kubernetes Jump Box Setup Script."
-  echo "This script will help set up your jump box and remotely clean Kubernetes nodes."
 
   # Detect Linux distribution
   if [ -f /etc/os-release ]; then
@@ -165,18 +173,8 @@ function main() {
   get_master_node
   get_worker_nodes
   get_pod_network_cidr
-
-  echo "Master Node: $MASTER_NODE"
-  echo "Worker Nodes: ${WORKER_NODES[*]}"
-  echo "Pod Network CIDR: $POD_CIDR"
-
+  cleanup_remote_nodes
   install_kubernetes_tools
-  initialize_master_node
-  install_networking
-  generate_worker_join_command
-  join_worker_nodes
-
-  echo "Setup completed successfully!"
 }
 
 main
