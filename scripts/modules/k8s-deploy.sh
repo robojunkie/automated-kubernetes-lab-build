@@ -26,12 +26,10 @@ install_kubernetes_binaries() {
     ssh_execute "$node_ip" "sudo mkdir -p -m 755 /etc/apt/keyrings"
     
     # Download Kubernetes GPG key with simple chained fallbacks (no loops to avoid nounset issues)
-    ssh_execute "$node_ip" "k8s_version=${k8s_version}; rm -f /tmp/k8s-key.asc; \
-(
-  curl -fsSL https://pkgs.k8s.io/core:/stable:/v${k8s_version}/deb/Release.key -o /tmp/k8s-key.asc || \
-  curl -fsSL https://pkgs.kubernetes.io/core:/stable:/v${k8s_version}/deb/Release.key -o /tmp/k8s-key.asc || \
-  curl -fsSL https://packages.kubernetes.io/core:/stable:/v${k8s_version}/deb/Release.key -o /tmp/k8s-key.asc
-) || { echo 'Unable to download Kubernetes apt key from any mirror'; exit 1; }"
+        ssh_execute "$node_ip" "k8s_version=${k8s_version}; rm -f /tmp/k8s-key.asc; \
+download() { host=$1; echo \"Attempting key download from https://$host/core:/stable:/v${k8s_version}/deb/Release.key\"; \
+    curl -4fsSL --retry 3 --retry-delay 1 -H 'User-Agent: apt' https://$host/core:/stable:/v${k8s_version}/deb/Release.key -o /tmp/k8s-key.asc; }; \
+download pkgs.k8s.io || download pkgs.kubernetes.io || download packages.kubernetes.io || { echo 'Unable to download Kubernetes apt key from any mirror'; exit 1; }"
 
     # Convert to GPG format without interactive prompts
     ssh_execute "$node_ip" "sudo gpg --batch --yes --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg /tmp/k8s-key.asc"
