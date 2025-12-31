@@ -14,14 +14,24 @@ install_kubernetes_binaries() {
     
     log_debug "Installing Kubernetes binaries on: $node_ip (version: $k8s_version)"
     
+    # Create keyrings directory if it doesn't exist
+    ssh_execute "$node_ip" "sudo mkdir -p /etc/apt/keyrings"
+    
+    # Download Kubernetes GPG key
+    ssh_execute "$node_ip" "curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo tee /etc/apt/keyrings/kubernetes-archive-keyring.gpg > /dev/null"
+    
+    # Add Kubernetes repository
     ssh_execute "$node_ip" "cat << EOF | sudo tee /etc/apt/sources.list.d/kubernetes.list
 deb [signed-by=/etc/apt/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main
 EOF"
     
-    ssh_execute "$node_ip" "curl -fsSLo /etc/apt/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg"
-    
+    # Update package list
     ssh_execute "$node_ip" "sudo apt-get update"
+    
+    # Install Kubernetes components
     ssh_execute "$node_ip" "sudo apt-get install -y kubelet=${k8s_version}* kubeadm=${k8s_version}* kubectl=${k8s_version}*"
+    
+    # Hold packages at current version
     ssh_execute "$node_ip" "sudo apt-mark hold kubelet kubeadm kubectl"
 }
 
