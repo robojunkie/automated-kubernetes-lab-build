@@ -17,19 +17,17 @@ install_kubernetes_binaries() {
     # Create keyrings directory if it doesn't exist
     ssh_execute "$node_ip" "sudo mkdir -p /etc/apt/keyrings"
     
-    # Download Kubernetes GPG key
-    ssh_execute "$node_ip" "curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo tee /etc/apt/keyrings/kubernetes-archive-keyring.gpg > /dev/null"
+    # Download Kubernetes GPG key (new repository location)
+    ssh_execute "$node_ip" "curl -fsSL https://pkgs.k8s.io/core:/stable:/v${k8s_version}/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg"
     
-    # Add Kubernetes repository
-    ssh_execute "$node_ip" "cat << EOF | sudo tee /etc/apt/sources.list.d/kubernetes.list
-deb [signed-by=/etc/apt/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main
-EOF"
+    # Add Kubernetes repository (new location)
+    ssh_execute "$node_ip" "echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${k8s_version}/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list"
     
     # Update package list
     ssh_execute "$node_ip" "sudo apt-get update"
     
-    # Install Kubernetes components
-    ssh_execute "$node_ip" "sudo apt-get install -y kubelet=${k8s_version}* kubeadm=${k8s_version}* kubectl=${k8s_version}*"
+    # Install Kubernetes components (without version suffix since new repo is version-specific)
+    ssh_execute "$node_ip" "sudo apt-get install -y kubelet kubeadm kubectl"
     
     # Hold packages at current version
     ssh_execute "$node_ip" "sudo apt-mark hold kubelet kubeadm kubectl"
