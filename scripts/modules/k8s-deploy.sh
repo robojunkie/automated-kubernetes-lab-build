@@ -136,13 +136,16 @@ stop_conflicting_services() {
         return 0
     fi
 
-    # Stop/disable common single-node distros or previous runs that occupy control-plane ports
-    ssh_execute "$node_ip" "sudo systemctl stop kubelet k3s k3s-agent microk8s 2>/dev/null || true" || log_warning "Unable to stop conflicting services on $node_ip (ignored)"
-    ssh_execute "$node_ip" "sudo systemctl disable k3s k3s-agent microk8s 2>/dev/null || true" || log_warning "Unable to disable conflicting services on $node_ip (ignored)"
-    ssh_execute "$node_ip" "sudo pkill -9 -f k3s || true" || log_warning "k3s kill attempt failed on $node_ip (ignored)"
+    log_debug "Stopping conflicting services on $node_ip..."
+    
+    # All cleanup attempts are best-effort; swallow all errors to continue
+    ssh_execute "$node_ip" "sudo systemctl stop kubelet k3s k3s-agent microk8s 2>/dev/null; true" 2>/dev/null || true
+    ssh_execute "$node_ip" "sudo systemctl disable k3s k3s-agent microk8s 2>/dev/null; true" 2>/dev/null || true
+    ssh_execute "$node_ip" "sudo pkill -9 -f k3s 2>/dev/null; true" 2>/dev/null || true
+    ssh_execute "$node_ip" "for port in 6443 10250 10257 10259; do sudo fuser -k \$port/tcp 2>/dev/null || true; done; true" 2>/dev/null || true
 
-    # Kill any remaining listeners on control-plane ports to avoid kubeadm bind errors
-    ssh_execute "$node_ip" "for port in 6443 10250 10257 10259; do sudo fuser -k \$port/tcp 2>/dev/null || true; done" || log_warning "Port cleanup failed on $node_ip (ignored)"
+    log_debug "Conflicting service cleanup complete on $node_ip"
+    return 0
 }
 
 ################################################################################
@@ -164,10 +167,10 @@ initialize_master() {
     
     # Reset any previous kubeadm state and ensure nothing else holds control-plane ports
     log_info "Cleaning up any previous Kubernetes state..."
-    stop_conflicting_services "$master_ip" || log_warning "Conflicting service cleanup reported errors; continuing"
-    ssh_execute "$master_ip" "sudo systemctl stop kubelet || true"
-    ssh_execute "$master_ip" "sudo systemctl reset-failed kubelet || true"
-    ssh_execute "$master_ip" "sudo pkill -9 -f kubelet || true"
+    stop_conflicting_services "$master_ip"
+    ssh_execute "$master_ip" "sudo systemctl stop kubelet 2>/dev/null; true" 2>/dev/null || true
+    ssh_execute "$master_ip" "sudo systemctl reset-failed kubelet 2>/dev/null; true" 2>/dev/null || true
+    ssh_execute "$master_ip" "sudo pkill -9 -f kubelet 2>/dev/null; true" 2>/dev/null || true
     ssh_execute "$master_ip" "sudo kubeadm reset -f || true"
     ssh_execute "$master_ip" "sudo rm -rf /etc/cni/net.d/* /var/lib/etcd/* ~/.kube || true"
     
