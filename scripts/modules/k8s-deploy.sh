@@ -84,7 +84,10 @@ ensure_container_runtime_ready() {
     # Add Docker's repository for containerd
     ssh_execute "$node_ip" "sudo apt-get install -y ca-certificates curl gnupg lsb-release"
     ssh_execute "$node_ip" "sudo mkdir -p /etc/apt/keyrings"
-    ssh_execute "$node_ip" "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg"
+    # Download Docker GPG key non-interactively then dearmor
+    ssh_execute "$node_ip" "curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /tmp/docker.gpg"
+    ssh_execute "$node_ip" "sudo gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg /tmp/docker.gpg"
+    ssh_execute "$node_ip" "sudo rm -f /tmp/docker.gpg"
     ssh_execute "$node_ip" "echo 'deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable' | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null"
     ssh_execute "$node_ip" "sudo apt-get update"
     
