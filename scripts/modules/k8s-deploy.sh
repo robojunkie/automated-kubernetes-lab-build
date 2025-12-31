@@ -88,18 +88,28 @@ ensure_container_runtime_ready() {
     ssh_execute "$node_ip" "echo 'deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable' | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null"
     ssh_execute "$node_ip" "sudo apt-get update"
     
-    # Install containerd
-    ssh_execute "$node_ip" "sudo apt-get install -y containerd.io"
+        # Install containerd
+        ssh_execute "$node_ip" "sudo apt-get install -y containerd.io"
     
-    # Create containerd config directory if needed
-    ssh_execute "$node_ip" "sudo mkdir -p /etc/containerd"
+        # Create containerd config directory if needed
+        ssh_execute "$node_ip" "sudo mkdir -p /etc/containerd"
     
-    # Generate default containerd config if not exists
-    ssh_execute "$node_ip" "test -f /etc/containerd/config.toml || sudo containerd config default | sudo tee /etc/containerd/config.toml > /dev/null"
+        # Write containerd config with CRI enabled and systemd cgroup driver
+        ssh_execute "$node_ip" "sudo tee /etc/containerd/config.toml >/dev/null <<'EOF'
+version = 2
+[plugins."io.containerd.grpc.v1.cri"]
+    sandbox_image = "registry.k8s.io/pause:3.9"
+    [plugins."io.containerd.grpc.v1.cri".containerd]
+        snapshotter = "overlayfs"
+    [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+        runtime_type = "io.containerd.runc.v2"
+        [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+            SystemdCgroup = true
+EOF"
     
-    # Enable and start containerd
-    ssh_execute "$node_ip" "sudo systemctl enable containerd"
-    ssh_execute "$node_ip" "sudo systemctl start containerd"
+        # Enable and restart containerd to load new config
+        ssh_execute "$node_ip" "sudo systemctl enable containerd"
+        ssh_execute "$node_ip" "sudo systemctl restart containerd"
     
     # Wait for containerd socket to be available
     while [[ $attempt -le $max_attempts ]]; do
