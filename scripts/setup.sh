@@ -58,8 +58,15 @@ function get_worker_nodes() {
 
 # Cleanup Logic for Kubernetes and Container Tools
 function cleanup_remote_nodes() {
-  echo "Starting cleanup process..."
+  echo "Do you want to run the cleanup process on the nodes? (yes/no)"
+  read -r RUN_CLEANUP
 
+  if [[ "$RUN_CLEANUP" != "yes" ]]; then
+    echo "Skipping cleanup process. Proceeding without cleanup."
+    return
+  fi
+
+  echo "Starting cleanup process..."
   for node in "$MASTER_NODE" "${WORKER_NODES[@]}"; do
     echo "Connecting to node: $node"
     ssh "$node" bash -s << 'ENDSSH'
@@ -101,6 +108,7 @@ ENDSSH
   done
 }
 
+
 # --- Main Logic ---
 function main() {
   echo "Welcome to the Kubernetes Jump Box Setup Script."
@@ -122,6 +130,7 @@ function main() {
   echo "Worker Nodes: ${WORKER_NODES[*]}"
 
   cleanup_remote_nodes
+
   echo "Setup completed successfully."
 }
 
