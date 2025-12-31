@@ -91,22 +91,21 @@ ensure_container_runtime_ready() {
     ssh_execute "$node_ip" "echo 'deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable' | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null"
     ssh_execute "$node_ip" "sudo apt-get update"
     
-        # Install containerd
-        ssh_execute "$node_ip" "sudo apt-get install -y containerd.io"
+    # Install containerd
+    ssh_execute "$node_ip" "sudo apt-get install -y containerd.io"
     
-        # Create containerd config directory if needed
-        ssh_execute "$node_ip" "sudo mkdir -p /etc/containerd"
+    # Create containerd config directory if needed
+    ssh_execute "$node_ip" "sudo mkdir -p /etc/containerd"
     
-disabled_plugins = []
-                # Write containerd config with CRI enabled and systemd cgroup driver
-                ssh_execute "$node_ip" "sudo containerd config default | sudo tee /etc/containerd/config.toml >/dev/null"
-                ssh_execute "$node_ip" "sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml"
+    # Write containerd config with CRI enabled and systemd cgroup driver
+    ssh_execute "$node_ip" "sudo containerd config default | sudo tee /etc/containerd/config.toml >/dev/null"
+    ssh_execute "$node_ip" "sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml"
     
-                # Enable and restart containerd to load new config
-                ssh_execute "$node_ip" "sudo systemctl enable containerd"
-                ssh_execute "$node_ip" "sudo systemctl daemon-reload"
-                # Restart may return non-zero if already active; tolerate and verify via socket check
-                ssh_execute "$node_ip" "sudo systemctl restart containerd || true"
+    # Enable and restart containerd to load new config
+    ssh_execute "$node_ip" "sudo systemctl enable containerd"
+    ssh_execute "$node_ip" "sudo systemctl daemon-reload"
+    # Restart may return non-zero if already active; tolerate and verify via socket check
+    ssh_execute "$node_ip" "sudo systemctl restart containerd || true"
     
     # Wait for containerd socket to be available
     while [[ $attempt -le $max_attempts ]]; do
