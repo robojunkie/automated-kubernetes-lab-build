@@ -26,20 +26,20 @@ install_kubernetes_binaries() {
     ssh_execute "$node_ip" "sudo mkdir -p -m 755 /etc/apt/keyrings"
     
     # Download Kubernetes GPG key with host fallbacks to avoid 403s from CDN
-    ssh_execute "$node_ip" "bash -c 'set +u; set -o pipefail; \\
-hosts=\"pkgs.k8s.io pkgs.kubernetes.io packages.kubernetes.io\"; \\
-for h in $hosts; do \\
-    echo \"Attempting key download from https://$h/core:/stable:/v${k8s_version}/deb/Release.key\"; \\
-    if curl -fsSL https://$h/core:/stable:/v${k8s_version}/deb/Release.key -o /tmp/k8s-key.asc; then \\
-        echo \"Key download succeeded from $h\"; \\
-        break; \\
-    else \\
-        echo \"Key download failed from $h; trying next mirror...\"; \\
-        rm -f /tmp/k8s-key.asc; \\
-    fi; \\
-done; \\
-if [[ ! -f /tmp/k8s-key.asc ]]; then \\
-    echo \"Unable to download Kubernetes apt key from any mirror\"; exit 1; \\
+    ssh_execute "$node_ip" "bash -c '
+hosts="pkgs.k8s.io pkgs.kubernetes.io packages.kubernetes.io"
+for h in $hosts; do
+    echo "Attempting key download from https://$h/core:/stable:/v${k8s_version}/deb/Release.key"
+    if curl -fsSL https://$h/core:/stable:/v${k8s_version}/deb/Release.key -o /tmp/k8s-key.asc; then
+        echo "Key download succeeded from $h"
+        break
+    else
+        echo "Key download failed from $h; trying next mirror..."
+        rm -f /tmp/k8s-key.asc
+    fi
+done
+if [ ! -f /tmp/k8s-key.asc ]; then
+    echo "Unable to download Kubernetes apt key from any mirror"; exit 1
 fi'"
 
     # Convert to GPG format without interactive prompts
