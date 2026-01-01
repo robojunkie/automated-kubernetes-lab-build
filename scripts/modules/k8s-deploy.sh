@@ -142,7 +142,7 @@ stop_conflicting_services() {
     ssh_execute "$node_ip" "sudo systemctl stop kubelet k3s k3s-agent microk8s 2>/dev/null; true" 2>/dev/null || true
     ssh_execute "$node_ip" "sudo systemctl disable k3s k3s-agent microk8s 2>/dev/null; true" 2>/dev/null || true
     ssh_execute "$node_ip" "sudo pkill -9 -f k3s 2>/dev/null; true" 2>/dev/null || true
-    ssh_execute "$node_ip" "for port in 6443 10250 10257 10259; do sudo fuser -k \$port/tcp 2>/dev/null || true; done; true" 2>/dev/null || true
+    ssh_execute "$node_ip" 'for port in 6443 10250 10257 10259; do sudo fuser -k $port/tcp 2>/dev/null || true; done; true' 2>/dev/null || true
 
     log_debug "Conflicting service cleanup complete on $node_ip"
     return 0
