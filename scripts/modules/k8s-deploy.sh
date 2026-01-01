@@ -203,6 +203,9 @@ initialize_master() {
     ssh_execute "$master_ip" "sudo cp -i /etc/kubernetes/admin.conf \$HOME/.kube/config 2>/dev/null || sudo cp /etc/kubernetes/admin.conf \$HOME/.kube/config"
     ssh_execute "$master_ip" "sudo chown \$(id -u):\$(id -g) \$HOME/.kube/config"
     
+    # Make admin.conf readable by the SSH user for kubectl commands
+    ssh_execute "$master_ip" "sudo chmod 644 /etc/kubernetes/admin.conf"
+    
     log_success "Master node initialized: $master_node"
 }
 

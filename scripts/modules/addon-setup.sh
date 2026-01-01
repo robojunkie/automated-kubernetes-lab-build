@@ -43,14 +43,14 @@ setup_calico() {
     
     log_debug "Installing Calico CNI..."
     
-    # Execute kubectl on master node via SSH, explicitly using kubeadm kubeconfig
-    ssh_execute "$master_ip" "export KUBECONFIG=/etc/kubernetes/admin.conf && kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/tigera-operator.yaml"
+    # Execute kubectl on master node via SSH, using kubeadm kubeconfig
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/tigera-operator.yaml"
     
     # Wait for operator to be ready
     sleep 10
     
     # Create Calico custom resource via SSH
-    ssh_execute "$master_ip" "export KUBECONFIG=/etc/kubernetes/admin.conf && cat << 'CALICO_EOF' | kubectl apply -f -
+    ssh_execute "$master_ip" "cat << 'CALICO_EOF' | KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -
 apiVersion: operator.tigera.io/v1
 kind: Installation
 metadata:
@@ -78,7 +78,7 @@ setup_flannel() {
     log_debug "Installing Flannel CNI..."
     
     # Execute kubectl on master node via SSH
-    ssh_execute "$master_ip" "kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml"
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml"
     
     log_success "Flannel CNI configured"
 }
@@ -92,7 +92,7 @@ setup_weave() {
     log_debug "Installing Weave CNI..."
     
     # Execute kubectl on master node via SSH
-    ssh_execute "$master_ip" "kubectl apply -f \"https://cloud.weave.works/k8s/net?k8s-version=\$(kubectl version | base64 | tr -d '\\n')\""
+    ssh_execute "$master_ip" "bash -c 'KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f \"https://cloud.weave.works/k8s/net?k8s-version=\$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl version | base64 | tr -d \"\\n\")\"'"
     
     log_success "Weave CNI configured"
 }
