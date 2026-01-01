@@ -254,14 +254,15 @@ join_worker_node() {
 ################################################################################
 wait_for_node_ready() {
     local node_name=$1
-    local max_attempts=${2:-60}
-    local delay=${3:-5}
+    local master_ip=$2
+    local max_attempts=${3:-60}
+    local delay=${4:-5}
     local attempt=1
     
     log_info "Waiting for node to be ready: $node_name"
     
     while [[ $attempt -le $max_attempts ]]; do
-        local node_status=$(kubectl get node "$node_name" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)
+        local node_status=$(ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get node '$node_name' -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}' 2>/dev/null")
         
         if [[ "$node_status" == "True" ]]; then
             log_success "Node is ready: $node_name"
@@ -295,8 +296,7 @@ deploy_kubernetes() {
     setup_cni "${CNI_PLUGIN:-calico}" "10.244.0.0/16" "$master_ip"
     
     # Wait for master to be ready (with CNI deployed)
-    # Note: This requires kubectl to be configured properly
-    wait_for_node_ready "$master_node" 120 10
+    wait_for_node_ready "$master_node" "$master_ip" 120 10
     
     # Get join token
     local join_token=$(get_join_token "$master_ip")
@@ -309,7 +309,7 @@ deploy_kubernetes() {
     # Join worker nodes
     for i in "${!WORKER_NODES[@]}"; do
         join_worker_node "${WORKER_NODES[$i]}" "${WORKER_IPS[$i]}" "$join_token" "$k8s_version"
-        wait_for_node_ready "${WORKER_NODES[$i]}" 120 10
+        wait_for_node_ready "${WORKER_NODES[$i]}" "$master_ip" 120 10
     done
     
     log_success "Kubernetes cluster deployment completed"
