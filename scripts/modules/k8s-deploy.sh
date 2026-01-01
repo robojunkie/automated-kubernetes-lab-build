@@ -262,19 +262,30 @@ wait_for_node_ready() {
     log_info "Waiting for node to be ready: $node_name"
     
     while [[ $attempt -le $max_attempts ]]; do
-        local node_status=$(ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get node '$node_name' -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}' 2>/dev/null")
+        log_debug "Checking node status (attempt $attempt/$max_attempts)..."
+        local node_status=$(ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get node '$node_name' -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}' 2>/dev/null" || echo "")
+        
+        log_debug "Raw node status response: '$node_status'"
         
         if [[ "$node_status" == "True" ]]; then
             log_success "Node is ready: $node_name"
             return 0
         fi
         
-        log_debug "Node not ready yet. Status: $node_status. Attempt $attempt/$max_attempts"
+        if [[ -z "$node_status" ]]; then
+            log_debug "Node not found or kubectl failed. Waiting..."
+        else
+            log_debug "Node status: $node_status (not Ready yet)"
+        fi
+        
         sleep "$delay"
         attempt=$((attempt + 1))
     done
     
     log_error "Node did not become ready within timeout: $node_name"
+    log_info "Dumping node info for debugging..."
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get nodes -o wide" || true
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -A" || true
     return 1
 }
 
