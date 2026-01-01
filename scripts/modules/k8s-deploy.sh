@@ -139,10 +139,23 @@ stop_conflicting_services() {
     log_debug "Stopping conflicting services on $node_ip..."
     
     # All cleanup attempts are best-effort; swallow all errors to continue
+    # Uninstall k3s if present
+    ssh_execute "$node_ip" "if [ -x /usr/local/bin/k3s-uninstall.sh ]; then /usr/local/bin/k3s-uninstall.sh; fi; true" 2>/dev/null || true
+    ssh_execute "$node_ip" "if [ -x /usr/local/bin/k3s-agent-uninstall.sh ]; then /usr/local/bin/k3s-agent-uninstall.sh; fi; true" 2>/dev/null || true
+    
+    # Stop services
     ssh_execute "$node_ip" "sudo systemctl stop kubelet k3s k3s-agent microk8s 2>/dev/null; true" 2>/dev/null || true
     ssh_execute "$node_ip" "sudo systemctl disable k3s k3s-agent microk8s 2>/dev/null; true" 2>/dev/null || true
+    
+    # Kill remaining processes
     ssh_execute "$node_ip" "sudo pkill -9 -f k3s 2>/dev/null; true" 2>/dev/null || true
+    ssh_execute "$node_ip" "sudo pkill -9 -f kubelet 2>/dev/null; true" 2>/dev/null || true
+    
+    # Free ports
     ssh_execute "$node_ip" 'for port in 6443 10250 10257 10259; do sudo fuser -k $port/tcp 2>/dev/null || true; done; true' 2>/dev/null || true
+    
+    # Clean k3s directories
+    ssh_execute "$node_ip" "sudo rm -rf /etc/rancher /var/lib/rancher /usr/local/bin/k3s* 2>/dev/null; true" 2>/dev/null || true
 
     log_debug "Conflicting service cleanup complete on $node_ip"
     return 0

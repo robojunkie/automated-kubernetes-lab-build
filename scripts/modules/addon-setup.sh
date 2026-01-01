@@ -43,14 +43,14 @@ setup_calico() {
     
     log_debug "Installing Calico CNI..."
     
-    # Execute kubectl on master node via SSH
-    ssh_execute "$master_ip" "kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/tigera-operator.yaml"
+    # Execute kubectl on master node via SSH, explicitly using kubeadm kubeconfig
+    ssh_execute "$master_ip" "export KUBECONFIG=/etc/kubernetes/admin.conf && kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/tigera-operator.yaml"
     
     # Wait for operator to be ready
     sleep 10
     
     # Create Calico custom resource via SSH
-    ssh_execute "$master_ip" "cat << 'CALICO_EOF' | kubectl apply -f -
+    ssh_execute "$master_ip" "export KUBECONFIG=/etc/kubernetes/admin.conf && cat << 'CALICO_EOF' | kubectl apply -f -
 apiVersion: operator.tigera.io/v1
 kind: Installation
 metadata:
