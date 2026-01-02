@@ -160,6 +160,139 @@ EOF"; then
     return 1
 }
 
+    ################################################################################
+    # Deploy Portainer (dashboard)
+    ################################################################################
+    setup_portainer() {
+        local master_ip=$1
+        local public_access=$2
+        local nodeport_port=30777
+        local max_attempts=30
+        local delay=5
+        local attempt=1
+
+        log_info "Deploying Portainer UI..."
+
+        # Base manifests (namespace, PVC, deployment)
+        ssh_execute "$master_ip" "cat << 'EOF' | KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -
+    apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: portainer
+    ---
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: portainer-data
+      namespace: portainer
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 2Gi
+    ---
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: portainer
+      namespace: portainer
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          app: portainer
+      template:
+        metadata:
+          labels:
+            app: portainer
+        spec:
+          containers:
+          - name: portainer
+            image: portainer/portainer-ce:2.20.3
+            imagePullPolicy: IfNotPresent
+            args:
+            - "--http-disabled"
+            ports:
+            - containerPort: 9443
+              name: https
+            - containerPort: 8000
+              name: edge
+            volumeMounts:
+            - name: portainer-data
+              mountPath: /data
+          volumes:
+          - name: portainer-data
+            persistentVolumeClaim:
+              claimName: portainer-data
+    EOF"
+
+        # Service manifest depends on public access choice
+        if [[ "$public_access" == "true" ]]; then
+            ssh_execute "$master_ip" "cat << 'EOF' | KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: portainer
+      namespace: portainer
+    spec:
+      type: LoadBalancer
+      ports:
+      - name: https
+        port: 9443
+        targetPort: 9443
+      - name: edge
+        port: 8000
+        targetPort: 8000
+      selector:
+        app: portainer
+    EOF"
+        else
+            ssh_execute "$master_ip" "cat << EOF | KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: portainer
+      namespace: portainer
+    spec:
+      type: NodePort
+      ports:
+      - name: https
+        port: 9443
+        targetPort: 9443
+        nodePort: ${nodeport_port}
+      selector:
+        app: portainer
+    EOF"
+        fi
+
+        # Wait for deployment ready
+        ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl rollout status deployment/portainer -n portainer --timeout=300s" || true
+
+        # Determine access URL
+        if [[ "$public_access" == "true" ]]; then
+            local external_ip=""
+            while [[ $attempt -le $max_attempts ]]; do
+                external_ip=$(ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get svc portainer -n portainer -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null")
+                if [[ -n "$external_ip" ]]; then
+                    break
+                fi
+                log_debug "Waiting for Portainer LoadBalancer IP (attempt $attempt/$max_attempts)..."
+                sleep "$delay"
+                attempt=$((attempt + 1))
+            done
+
+            if [[ -n "$external_ip" ]]; then
+                log_success "Portainer is available at: https://${external_ip}:9443"
+                log_info "If DNS is used, point a record to ${external_ip}."
+            else
+                log_warning "Portainer LoadBalancer IP not assigned yet. Check service status with: kubectl get svc -n portainer"
+            fi
+        else
+            log_success "Portainer is available via NodePort: https://${master_ip}:${nodeport_port}"
+        fi
+    }
+
 ################################################################################
 # Setup NGINX Ingress Controller
 ################################################################################

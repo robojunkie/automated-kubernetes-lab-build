@@ -235,6 +235,14 @@ collect_user_input() {
     read -r -p "Select CNI plugin (calico|flannel|weave) [default: calico]: " CNI_PLUGIN
     CNI_PLUGIN="${CNI_PLUGIN:-calico}"
     validate_cni_plugin "$CNI_PLUGIN"
+    
+        # Portainer (dashboard) install
+        read -r -p "Install Portainer dashboard? (yes/no) [default: yes]: " PORTAINER_INPUT
+        PORTAINER_INPUT="${PORTAINER_INPUT:-yes}"
+        INSTALL_PORTAINER=false
+        if [[ "$PORTAINER_INPUT" =~ ^(yes|y|true)$ ]]; then
+            INSTALL_PORTAINER=true
+        fi
 }
 
 ################################################################################
@@ -315,7 +323,15 @@ execute_deployment() {
         log_info "Setting up MetalLB for public container access..."
         setup_metallb "$SUBNET_CIDR" "$MASTER_IP"
     fi
-    
+
+    # Optional: Deploy Portainer UI (LoadBalancer if public access, else NodePort)
+    if [[ "$INSTALL_PORTAINER" == true ]]; then
+        log_info "Deploying Portainer dashboard..."
+        setup_portainer "$MASTER_IP" "${PUBLIC_CONTAINERS:-false}"
+    else
+        log_info "Skipping Portainer deployment (per user choice)"
+    fi
+
     log_success "Kubernetes cluster deployment completed successfully!"
 }
 
