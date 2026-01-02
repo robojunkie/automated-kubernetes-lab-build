@@ -188,24 +188,12 @@ EOF"; then
 
         log_info "Deploying Portainer UI..."
 
-        # Base manifests (namespace, PVC, deployment)
+        # Base manifests (namespace, deployment with ephemeral storage)
         ssh_execute "$master_ip" "cat << 'EOF' | KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -
 apiVersion: v1
 kind: Namespace
 metadata:
   name: portainer
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: portainer-data
-  namespace: portainer
-spec:
-  accessModes:
-  - ReadWriteOnce
-  resources:
-    requests:
-      storage: 2Gi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -238,8 +226,7 @@ spec:
           mountPath: /data
       volumes:
       - name: portainer-data
-        persistentVolumeClaim:
-          claimName: portainer-data
+        emptyDir: {}
 EOF"
 
         # Service manifest depends on public access choice
