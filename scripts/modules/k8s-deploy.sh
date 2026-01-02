@@ -237,6 +237,11 @@ ensure_container_runtime_ready_rhel() {
     ssh_execute "$node_ip" "sudo firewall-cmd --permanent --add-port=10250-10252/tcp 2>/dev/null || true"  # kubelet, scheduler, controller
     ssh_execute "$node_ip" "sudo firewall-cmd --permanent --add-port=10255/tcp 2>/dev/null || true"  # read-only kubelet
     ssh_execute "$node_ip" "sudo firewall-cmd --permanent --add-port=30000-32767/tcp 2>/dev/null || true"  # NodePort range
+    
+    # Allow Calico/CNI pod network (10.244.0.0/16 and service network 10.96.0.0/12)
+    ssh_execute "$node_ip" "sudo firewall-cmd --permanent --zone=trusted --add-source=10.244.0.0/16 2>/dev/null || true"
+    ssh_execute "$node_ip" "sudo firewall-cmd --permanent --zone=trusted --add-source=10.96.0.0/12 2>/dev/null || true"
+    
     ssh_execute "$node_ip" "sudo firewall-cmd --reload 2>/dev/null || true"
     
     # Enable and restart containerd to load new config
