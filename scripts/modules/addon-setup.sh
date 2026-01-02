@@ -103,19 +103,20 @@ setup_weave() {
 ################################################################################
 setup_metallb() {
     local subnet=$1
+    local master_ip=$2
     
     log_info "Setting up MetalLB for load balancing..."
     
-    # Install MetalLB
+    # Install MetalLB via master (kubectl available there)
     log_debug "Installing MetalLB operator..."
-    kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/main/config/manifests/metallb-native.yaml
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/main/config/manifests/metallb-native.yaml"
     
     # Wait for MetalLB to be ready
-    kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=metallb -n metallb-system --timeout=300s 2>/dev/null || true
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=metallb -n metallb-system --timeout=300s" 2>/dev/null || true
     
     # Configure MetalLB with IP address pool
     log_debug "Configuring MetalLB IP pool..."
-    kubectl apply -f - << EOF
+    ssh_execute "$master_ip" "cat << 'EOF' | KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -
 apiVersion: metallb.io/v1beta1
 kind: IPAddressPool
 metadata:
@@ -133,7 +134,7 @@ metadata:
 spec:
   ipAddressPools:
   - default
-EOF
+EOF"
     
     log_success "MetalLB configured"
 }

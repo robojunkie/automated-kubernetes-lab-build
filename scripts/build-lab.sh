@@ -308,7 +308,7 @@ execute_deployment() {
     # Optional: Setup load balancing and ingress
     if [[ "$PUBLIC_CONTAINERS" == true ]]; then
         log_info "Setting up MetalLB for public container access..."
-        setup_metallb "$SUBNET_CIDR"
+        setup_metallb "$SUBNET_CIDR" "$MASTER_IP"
     fi
     
     log_success "Kubernetes cluster deployment completed successfully!"
