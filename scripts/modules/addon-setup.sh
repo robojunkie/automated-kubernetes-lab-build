@@ -156,22 +156,25 @@ setup_metallb() {
     # Give webhook extra time to start serving requests
     sleep 15
     
-    log_debug "Configuring MetalLB IP pool..."
+    log_debug "Configuring MetalLB IP pool: ${pool_addresses}"
     local attempt=1
     while [[ $attempt -le $max_retries ]]; do
-        if ssh_execute "$master_ip" "cat << 'EOF' | KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -
+        if ssh_execute "$master_ip" "cat << EOF | KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -
 apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
 metadata:
   name: default
   namespace: metallb-system
 spec:
   addresses:
+  - ${pool_addresses}
 ---
 apiVersion: metallb.io/v1beta1
 kind: L2Advertisement
 metadata:
   name: default
   namespace: metallb-system
+spec:
   ipAddressPools:
   - default
 EOF"; then
