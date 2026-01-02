@@ -35,6 +35,25 @@ setup_cni() {
 }
 
 ################################################################################
+# Setup default storage class (local-path provisioner)
+################################################################################
+setup_default_storage() {
+  local master_ip=$1
+
+  log_info "Setting up default storage class (local-path)..."
+
+  ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml"
+
+  # Make local-path the default storage class
+  ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl annotate storageclass local-path storageclass.kubernetes.io/is-default-class='true' --overwrite"
+
+  # Wait for controller pod ready
+  ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl wait --for=condition=ready pod -l app=local-path-provisioner -n local-path-storage --timeout=120s" 2>/dev/null || true
+
+  log_success "Default storage class configured (local-path)"
+}
+
+################################################################################
 # Setup Calico CNI
 ################################################################################
 setup_calico() {
@@ -102,15 +121,14 @@ setup_weave() {
 # Setup MetalLB for load balancing
 ################################################################################
 setup_metallb() {
-    local subnet=$1
-    local master_ip=$2
-    local max_retries=5
-    local retry_delay=10
-  local pool_addresses="$subnet"
+  local pool=$1
+  local master_ip=$2
+  local max_retries=5
+  local retry_delay=10
+  local pool_addresses="$pool"
 
-  # Avoid assigning the network address (.0) by narrowing a /24 CIDR to a usable range
-  # Example: 192.168.1.0/24 -> 192.168.1.50-192.168.1.250
-  if [[ "$subnet" =~ ^([0-9]+\.[0-9]+\.[0-9]+)\.0/24$ ]]; then
+  # Guard against using network/broadcast if a /24 network address is provided
+  if [[ "$pool_addresses" =~ ^([0-9]+\.[0-9]+\.[0-9]+)\.0/24$ ]]; then
     local base="${BASH_REMATCH[1]}"
     pool_addresses="${base}.50-${base}.250"
     log_info "Adjusting MetalLB pool to avoid .0/.255: ${pool_addresses}"
@@ -127,7 +145,6 @@ setup_metallb() {
     ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=metallb -l app.kubernetes.io/component=controller -n metallb-system --timeout=300s" 2>/dev/null || true
     
     # Wait for webhook service to be ready and serving requests
-    log_debug "Waiting for webhook service to accept connections..."
     ssh_execute "$master_ip" "for i in {1..45}; do
         endpoints=\$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl get endpoints metallb-webhook-service -n metallb-system --no-headers 2>/dev/null)
         if [[ -n \"\$endpoints\" ]] && [[ \"\$endpoints\" != \"<none>\" ]]; then
@@ -139,26 +156,22 @@ setup_metallb() {
     # Give webhook extra time to start serving requests
     sleep 15
     
-    # Configure MetalLB with IP address pool (with retry logic)
     log_debug "Configuring MetalLB IP pool..."
     local attempt=1
     while [[ $attempt -le $max_retries ]]; do
         if ssh_execute "$master_ip" "cat << 'EOF' | KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -
 apiVersion: metallb.io/v1beta1
-kind: IPAddressPool
 metadata:
   name: default
   namespace: metallb-system
 spec:
   addresses:
-  - ${pool_addresses}
 ---
 apiVersion: metallb.io/v1beta1
 kind: L2Advertisement
 metadata:
   name: default
   namespace: metallb-system
-spec:
   ipAddressPools:
   - default
 EOF"; then

@@ -37,6 +37,7 @@ WORKER_COUNT=0
 SUBNET=""
 SUBNET_CIDR=""
 PUBLIC_CONTAINERS=false
+METALLB_POOL=""
 K8S_VERSION="1.28"
 CNI_PLUGIN="calico"
 KUBECONFIG_PATH=""
@@ -202,6 +203,17 @@ collect_user_input() {
     if [[ "$PUBLIC_CONTAINERS_INPUT" =~ ^(yes|y|true)$ ]]; then
         PUBLIC_CONTAINERS=true
     fi
+
+    # MetalLB pool (only if public access is enabled)
+    if [[ "$PUBLIC_CONTAINERS" == true ]]; then
+        local default_pool="$SUBNET_CIDR"
+        if [[ "$SUBNET_CIDR" =~ ^([0-9]+\.[0-9]+\.[0-9]+)\.0/24$ ]]; then
+            local base="${BASH_REMATCH[1]}"
+            default_pool="${base}.50-${base}.250"
+        fi
+        read -r -p "Enter MetalLB IP pool (range or CIDR) [default: ${default_pool}]: " METALLB_POOL
+        METALLB_POOL="${METALLB_POOL:-$default_pool}"
+    fi
     
     log_info ""
     log_info "=========================================="
@@ -262,6 +274,9 @@ display_config_summary() {
     done
     echo "Subnet (Pod CIDR):         $SUBNET_CIDR"
     echo "Public Container Access:   $([ "$PUBLIC_CONTAINERS" = true ] && echo "Yes" || echo "No")"
+    if [[ "$PUBLIC_CONTAINERS" == true ]]; then
+        echo "MetalLB IP Pool:           $METALLB_POOL"
+    fi
     echo "Kubernetes Version:        $K8S_VERSION"
     echo "CNI Plugin:                $CNI_PLUGIN"
     echo ""
@@ -321,8 +336,12 @@ execute_deployment() {
     # Optional: Setup load balancing and ingress
     if [[ "$PUBLIC_CONTAINERS" == true ]]; then
         log_info "Setting up MetalLB for public container access..."
-        setup_metallb "$SUBNET_CIDR" "$MASTER_IP"
+        setup_metallb "$METALLB_POOL" "$MASTER_IP"
     fi
+
+    # Default storage class (local-path provisioner)
+    log_info "Setting up default storage class..."
+    setup_default_storage "$MASTER_IP"
 
     # Optional: Deploy Portainer UI (LoadBalancer if public access, else NodePort)
     if [[ "$INSTALL_PORTAINER" == true ]]; then
