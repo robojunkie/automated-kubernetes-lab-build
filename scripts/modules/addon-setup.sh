@@ -117,12 +117,18 @@ setup_metallb() {
     log_debug "Waiting for MetalLB webhook to be ready..."
     ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=metallb -l app.kubernetes.io/component=controller -n metallb-system --timeout=300s" 2>/dev/null || true
     
-    # Wait for webhook endpoints to be available
-    log_debug "Waiting for webhook service endpoints..."
-    ssh_execute "$master_ip" "for i in {1..30}; do KUBECONFIG=/etc/kubernetes/admin.conf kubectl get endpoints metallb-webhook-service -n metallb-system --no-headers 2>/dev/null | grep -q metallb-webhook-service && break; sleep 2; done" 2>/dev/null || true
+    # Wait for webhook service to be ready and serving requests
+    log_debug "Waiting for webhook service to accept connections..."
+    ssh_execute "$master_ip" "for i in {1..45}; do
+        endpoints=\$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl get endpoints metallb-webhook-service -n metallb-system --no-headers 2>/dev/null)
+        if [[ -n \"\$endpoints\" ]] && [[ \"\$endpoints\" != \"<none>\" ]]; then
+            break
+        fi
+        sleep 2
+    done" 2>/dev/null || true
     
-    # Give webhook extra time to start serving
-    sleep 10
+    # Give webhook extra time to start serving requests
+    sleep 15
     
     # Configure MetalLB with IP address pool (with retry logic)
     log_debug "Configuring MetalLB IP pool..."
@@ -248,7 +254,7 @@ EOF"; then
         app: portainer
     EOF"
         else
-            ssh_execute "$master_ip" "cat << EOF | KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -
+            ssh_execute "$master_ip" "cat << 'EOF' | KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -
     apiVersion: v1
     kind: Service
     metadata:
