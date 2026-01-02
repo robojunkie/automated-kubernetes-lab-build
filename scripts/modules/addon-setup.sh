@@ -106,6 +106,15 @@ setup_metallb() {
     local master_ip=$2
     local max_retries=5
     local retry_delay=10
+  local pool_addresses="$subnet"
+
+  # Avoid assigning the network address (.0) by narrowing a /24 CIDR to a usable range
+  # Example: 192.168.1.0/24 -> 192.168.1.50-192.168.1.250
+  if [[ "$subnet" =~ ^([0-9]+\.[0-9]+\.[0-9]+)\.0/24$ ]]; then
+    local base="${BASH_REMATCH[1]}"
+    pool_addresses="${base}.50-${base}.250"
+    log_info "Adjusting MetalLB pool to avoid .0/.255: ${pool_addresses}"
+  fi
     
     log_info "Setting up MetalLB for load balancing..."
     
@@ -142,7 +151,7 @@ metadata:
   namespace: metallb-system
 spec:
   addresses:
-  - ${subnet}
+  - ${pool_addresses}
 ---
 apiVersion: metallb.io/v1beta1
 kind: L2Advertisement
