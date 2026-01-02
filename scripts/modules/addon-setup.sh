@@ -181,94 +181,94 @@ EOF"; then
 
         # Base manifests (namespace, PVC, deployment)
         ssh_execute "$master_ip" "cat << 'EOF' | KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -
-    apiVersion: v1
-    kind: Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: portainer
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: portainer-data
+  namespace: portainer
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: portainer
+  namespace: portainer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: portainer
+  template:
     metadata:
-      name: portainer
-    ---
-    apiVersion: v1
-    kind: PersistentVolumeClaim
-    metadata:
-      name: portainer-data
-      namespace: portainer
+      labels:
+        app: portainer
     spec:
-      accessModes:
-      - ReadWriteOnce
-      resources:
-        requests:
-          storage: 2Gi
-    ---
-    apiVersion: apps/v1
-    kind: Deployment
-    metadata:
-      name: portainer
-      namespace: portainer
-    spec:
-      replicas: 1
-      selector:
-        matchLabels:
-          app: portainer
-      template:
-        metadata:
-          labels:
-            app: portainer
-        spec:
-          containers:
-          - name: portainer
-            image: portainer/portainer-ce:2.20.3
-            imagePullPolicy: IfNotPresent
-            args:
-            - "--http-disabled"
-            ports:
-            - containerPort: 9443
-              name: https
-            - containerPort: 8000
-              name: edge
-            volumeMounts:
-            - name: portainer-data
-              mountPath: /data
-          volumes:
-          - name: portainer-data
-            persistentVolumeClaim:
-              claimName: portainer-data
-    EOF"
+      containers:
+      - name: portainer
+        image: portainer/portainer-ce:2.20.3
+        imagePullPolicy: IfNotPresent
+        args:
+        - "--http-disabled"
+        ports:
+        - containerPort: 9443
+          name: https
+        - containerPort: 8000
+          name: edge
+        volumeMounts:
+        - name: portainer-data
+          mountPath: /data
+      volumes:
+      - name: portainer-data
+        persistentVolumeClaim:
+          claimName: portainer-data
+EOF"
 
         # Service manifest depends on public access choice
         if [[ "$public_access" == "true" ]]; then
             ssh_execute "$master_ip" "cat << 'EOF' | KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -
-    apiVersion: v1
-    kind: Service
-    metadata:
-      name: portainer
-      namespace: portainer
-    spec:
-      type: LoadBalancer
-      ports:
-      - name: https
-        port: 9443
-        targetPort: 9443
-      - name: edge
-        port: 8000
-        targetPort: 8000
-      selector:
-        app: portainer
+apiVersion: v1
+kind: Service
+metadata:
+  name: portainer
+  namespace: portainer
+spec:
+  type: LoadBalancer
+  ports:
+  - name: https
+    port: 9443
+    targetPort: 9443
+  - name: edge
+    port: 8000
+    targetPort: 8000
+  selector:
+    app: portainer
     EOF"
         else
             ssh_execute "$master_ip" "cat << 'EOF' | KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -
-    apiVersion: v1
-    kind: Service
-    metadata:
-      name: portainer
-      namespace: portainer
-    spec:
-      type: NodePort
-      ports:
-      - name: https
-        port: 9443
-        targetPort: 9443
-        nodePort: ${nodeport_port}
-      selector:
-        app: portainer
+apiVersion: v1
+kind: Service
+metadata:
+  name: portainer
+  namespace: portainer
+spec:
+  type: NodePort
+  ports:
+  - name: https
+    port: 9443
+    targetPort: 9443
+    nodePort: ${nodeport_port}
+  selector:
+    app: portainer
     EOF"
         fi
 
