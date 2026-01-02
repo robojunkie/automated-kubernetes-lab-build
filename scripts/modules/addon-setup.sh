@@ -111,8 +111,12 @@ setup_metallb() {
     log_debug "Installing MetalLB operator..."
     ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/main/config/manifests/metallb-native.yaml"
     
-    # Wait for MetalLB to be ready
-    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=metallb -n metallb-system --timeout=300s" 2>/dev/null || true
+    # Wait for MetalLB webhook to be ready before configuring pools
+    log_debug "Waiting for MetalLB webhook to be ready..."
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=metallb -l app.kubernetes.io/component=controller -n metallb-system --timeout=300s" 2>/dev/null || true
+    
+    # Give webhook a moment to start serving
+    sleep 5
     
     # Configure MetalLB with IP address pool
     log_debug "Configuring MetalLB IP pool..."
