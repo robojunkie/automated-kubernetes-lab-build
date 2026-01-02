@@ -61,7 +61,7 @@ install_kubernetes_binaries() {
     ssh_execute "$node_ip" "echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${k8s_version}/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list"
     
     # Update package list
-    ssh_execute "$node_ip" "sudo apt-get update"
+    ssh_execute "$node_ip" "sudo apt-get update -o Acquire::ForceIPv4=true"
     
     # Install Kubernetes components
     ssh_execute "$node_ip" "sudo apt-get install -y kubelet kubeadm kubectl"
@@ -89,10 +89,10 @@ ensure_container_runtime_ready() {
     ssh_execute "$node_ip" "sudo gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg /tmp/docker.gpg"
     ssh_execute "$node_ip" "sudo rm -f /tmp/docker.gpg"
     ssh_execute "$node_ip" "echo 'deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable' | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null"
-    ssh_execute "$node_ip" "sudo apt-get update"
+    ssh_execute "$node_ip" "sudo apt-get update -o Acquire::ForceIPv4=true"
     
-    # Install containerd
-    ssh_execute "$node_ip" "sudo apt-get install -y containerd.io"
+    # Install containerd (Docker repo). Fallback to Ubuntu's containerd if Docker repo is unreachable.
+    ssh_execute "$node_ip" "sudo apt-get install -y containerd.io || sudo apt-get install -y containerd"
     
     # Create containerd config directory if needed
     ssh_execute "$node_ip" "sudo mkdir -p /etc/containerd"
