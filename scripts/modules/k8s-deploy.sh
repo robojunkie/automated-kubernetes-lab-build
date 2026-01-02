@@ -6,13 +6,36 @@
 ################################################################################
 
 ################################################################################
-# Install kubeadm, kubectl, and kubelet
+# Detect OS family
 ################################################################################
-install_kubernetes_binaries() {
+detect_os_family() {
+    local node_ip=$1
+    
+    # Check for OS release info
+    local os_info=$(ssh_execute "$node_ip" "cat /etc/os-release 2>/dev/null | grep -E '^ID=' | cut -d= -f2 | tr -d '\"'")
+    
+    case "$os_info" in
+        ubuntu|debian)
+            echo "debian"
+            ;;
+        rocky|rhel|centos|almalinux)
+            echo "rhel"
+            ;;
+        *)
+            log_error "Unsupported OS: $os_info on $node_ip"
+            exit 1
+            ;;
+    esac
+}
+
+################################################################################
+# Install kubeadm, kubectl, and kubelet (Debian/Ubuntu)
+################################################################################
+install_kubernetes_binaries_debian() {
     local node_ip=$1
     local k8s_version=$2
     
-    log_debug "Installing Kubernetes binaries on: $node_ip (version: $k8s_version)"
+    log_debug "Installing Kubernetes binaries (Debian) on: $node_ip (version: $k8s_version)"
     
     # Remove old Kubernetes repository if it exists
     ssh_execute "$node_ip" "sudo rm -f /etc/apt/sources.list.d/kubernetes.list"
@@ -71,9 +94,69 @@ install_kubernetes_binaries() {
 }
 
 ################################################################################
-# Ensure container runtime is ready
+# Install kubeadm, kubectl, and kubelet (RHEL/Rocky/AlmaLinux)
 ################################################################################
-ensure_container_runtime_ready() {
+install_kubernetes_binaries_rhel() {
+    local node_ip=$1
+    local k8s_version=$2
+    
+    log_debug "Installing Kubernetes binaries (RHEL) on: $node_ip (version: $k8s_version)"
+    
+    # Remove old Kubernetes repository if it exists
+    ssh_execute "$node_ip" "sudo rm -f /etc/yum.repos.d/kubernetes.repo"
+    
+    # Disable swap
+    ssh_execute "$node_ip" "sudo swapoff -a"
+    ssh_execute "$node_ip" "sudo sed -i '/ swap / s/^/#/' /etc/fstab 2>/dev/null || true"
+    
+    # Set SELinux to permissive mode
+    ssh_execute "$node_ip" "sudo setenforce 0 2>/dev/null || true"
+    ssh_execute "$node_ip" "sudo sed -i 's/^SELINUX=enforcing/SELINUX=permissive/' /etc/selinux/config 2>/dev/null || true"
+    
+    # Add Kubernetes repository
+    ssh_execute "$node_ip" "cat <<EOF | sudo tee /etc/yum.repos.d/kubernetes.repo
+[kubernetes]
+name=Kubernetes
+baseurl=https://pkgs.k8s.io/core:/stable:/v${k8s_version}/rpm/
+enabled=1
+gpgcheck=1
+gpgkey=https://pkgs.k8s.io/core:/stable:/v${k8s_version}/rpm/repodata/repomd.xml.key
+exclude=kubelet kubeadm kubectl cri-tools kubernetes-cni
+EOF"
+    
+    # Install Kubernetes components
+    ssh_execute "$node_ip" "sudo dnf install -y kubelet kubeadm kubectl --disableexcludes=kubernetes"
+    
+    # Enable and start kubelet
+    ssh_execute "$node_ip" "sudo systemctl enable kubelet"
+}
+
+################################################################################
+# Install kubeadm, kubectl, and kubelet (dispatch by OS)
+################################################################################
+install_kubernetes_binaries() {
+    local node_ip=$1
+    local k8s_version=$2
+    local os_family=$(detect_os_family "$node_ip")
+    
+    case "$os_family" in
+        debian)
+            install_kubernetes_binaries_debian "$node_ip" "$k8s_version"
+            ;;
+        rhel)
+            install_kubernetes_binaries_rhel "$node_ip" "$k8s_version"
+            ;;
+        *)
+            log_error "Unsupported OS family: $os_family"
+            exit 1
+            ;;
+    esac
+}
+
+################################################################################
+# Ensure container runtime is ready (Debian/Ubuntu)
+################################################################################
+ensure_container_runtime_ready_debian() {
     local node_ip=$1
     local max_attempts=30
     local delay=2
@@ -88,7 +171,7 @@ ensure_container_runtime_ready() {
     ssh_execute "$node_ip" "curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /tmp/docker.gpg"
     ssh_execute "$node_ip" "sudo gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg /tmp/docker.gpg"
     ssh_execute "$node_ip" "sudo rm -f /tmp/docker.gpg"
-    ssh_execute "$node_ip" "echo 'deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable' | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null"
+    ssh_execute "$node_ip" "echo 'deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \$(lsb_release -cs) stable' | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null"
     ssh_execute "$node_ip" "sudo apt-get update -o Acquire::ForceIPv4=true"
     
     # Install containerd (Docker repo). Fallback to Ubuntu's containerd if Docker repo is unreachable.
@@ -121,6 +204,81 @@ ensure_container_runtime_ready() {
     
     log_error "Container runtime failed to become ready within timeout: $node_ip"
     return 1
+}
+
+################################################################################
+# Ensure container runtime is ready (RHEL/Rocky/AlmaLinux)
+################################################################################
+ensure_container_runtime_ready_rhel() {
+    local node_ip=$1
+    local max_attempts=30
+    local delay=2
+    local attempt=1
+
+    log_info "Ensuring container runtime (containerd) is ready on: $node_ip"
+    
+    # Add Docker repo for containerd
+    ssh_execute "$node_ip" "sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo"
+    
+    # Install containerd
+    ssh_execute "$node_ip" "sudo dnf install -y containerd.io"
+    
+    # Create containerd config directory if needed
+    ssh_execute "$node_ip" "sudo mkdir -p /etc/containerd"
+    
+    # Write containerd config with CRI enabled and systemd cgroup driver
+    ssh_execute "$node_ip" "sudo containerd config default | sudo tee /etc/containerd/config.toml >/dev/null"
+    ssh_execute "$node_ip" "sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml"
+    
+    # Configure firewalld for Kubernetes
+    ssh_execute "$node_ip" "sudo systemctl enable --now firewalld 2>/dev/null || true"
+    ssh_execute "$node_ip" "sudo firewall-cmd --permanent --add-port=6443/tcp 2>/dev/null || true"  # API server
+    ssh_execute "$node_ip" "sudo firewall-cmd --permanent --add-port=2379-2380/tcp 2>/dev/null || true"  # etcd
+    ssh_execute "$node_ip" "sudo firewall-cmd --permanent --add-port=10250-10252/tcp 2>/dev/null || true"  # kubelet, scheduler, controller
+    ssh_execute "$node_ip" "sudo firewall-cmd --permanent --add-port=10255/tcp 2>/dev/null || true"  # read-only kubelet
+    ssh_execute "$node_ip" "sudo firewall-cmd --permanent --add-port=30000-32767/tcp 2>/dev/null || true"  # NodePort range
+    ssh_execute "$node_ip" "sudo firewall-cmd --reload 2>/dev/null || true"
+    
+    # Enable and restart containerd to load new config
+    ssh_execute "$node_ip" "sudo systemctl enable containerd"
+    ssh_execute "$node_ip" "sudo systemctl daemon-reload"
+    ssh_execute "$node_ip" "sudo systemctl restart containerd || true"
+    
+    # Wait for containerd socket to be available
+    while [[ $attempt -le $max_attempts ]]; do
+        if ssh_execute "$node_ip" "test -S /var/run/containerd/containerd.sock" 2>/dev/null; then
+            log_success "Container runtime is ready: $node_ip"
+            return 0
+        fi
+        
+        log_debug "Waiting for container runtime socket. Attempt $attempt/$max_attempts"
+        sleep "$delay"
+        attempt=$((attempt + 1))
+    done
+    
+    log_error "Container runtime failed to become ready within timeout: $node_ip"
+    return 1
+}
+
+################################################################################
+# Ensure container runtime is ready (dispatch by OS)
+################################################################################
+ensure_container_runtime_ready() {
+    local node_ip=$1
+    local os_family=$(detect_os_family "$node_ip")
+    
+    case "$os_family" in
+        debian)
+            ensure_container_runtime_ready_debian "$node_ip"
+            ;;
+        rhel)
+            ensure_container_runtime_ready_rhel "$node_ip"
+            ;;
+        *)
+            log_error "Unsupported OS family: $os_family"
+            exit 1
+            ;;
+    esac
 }
 
 ################################################################################
