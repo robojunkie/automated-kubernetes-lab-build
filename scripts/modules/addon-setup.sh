@@ -252,7 +252,7 @@ spec:
     targetPort: 8000
   selector:
     app: portainer
-    EOF"
+EOF"
         else
             ssh_execute "$master_ip" "cat << 'EOF' | KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -
 apiVersion: v1
@@ -269,7 +269,7 @@ spec:
     nodePort: ${nodeport_port}
   selector:
     app: portainer
-    EOF"
+EOF"
         fi
 
         # Wait for deployment ready
