@@ -235,6 +235,12 @@ join_worker_node() {
     
     log_info "Joining worker node: $worker_node ($worker_ip)"
     
+    # Clean up any previous state on worker (k3s, previous kubelet, etc.)
+    stop_conflicting_services "$worker_ip"
+    ssh_execute "$worker_ip" "sudo systemctl stop kubelet 2>/dev/null; true" 2>/dev/null || true
+    ssh_execute "$worker_ip" "sudo systemctl reset-failed kubelet 2>/dev/null; true" 2>/dev/null || true
+    ssh_execute "$worker_ip" "sudo pkill -9 -f kubelet 2>/dev/null; true" 2>/dev/null || true
+    
     # Install Kubernetes binaries
     install_kubernetes_binaries "$worker_ip" "$k8s_version"
     
