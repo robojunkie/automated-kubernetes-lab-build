@@ -81,18 +81,27 @@ ensure_container_runtime_ready() {
 
     log_info "Ensuring container runtime (containerd) is ready on: $node_ip"
     
-    # Add Docker's repository for containerd
+    # Try Docker repo first for newer containerd; fall back to Ubuntu repo if unreachable
     ssh_execute "$node_ip" "sudo apt-get install -y ca-certificates curl gnupg lsb-release"
     ssh_execute "$node_ip" "sudo mkdir -p /etc/apt/keyrings"
-    # Download Docker GPG key non-interactively then dearmor
-    ssh_execute "$node_ip" "curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /tmp/docker.gpg"
-    ssh_execute "$node_ip" "sudo gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg /tmp/docker.gpg"
-    ssh_execute "$node_ip" "sudo rm -f /tmp/docker.gpg"
-    ssh_execute "$node_ip" "echo 'deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable' | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null"
-    ssh_execute "$node_ip" "sudo apt-get update -o Acquire::ForceIPv4=true"
-    
-    # Install containerd (Docker repo). Fallback to Ubuntu's containerd if Docker repo is unreachable.
-    ssh_execute "$node_ip" "sudo apt-get install -y containerd.io || sudo apt-get install -y containerd"
+
+    local docker_repo_added=0
+    if ssh_execute "$node_ip" "curl -4fsSL --retry 3 --retry-delay 2 https://download.docker.com/linux/ubuntu/gpg -o /tmp/docker.gpg"; then
+        ssh_execute "$node_ip" "sudo gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg /tmp/docker.gpg"
+        ssh_execute "$node_ip" "sudo rm -f /tmp/docker.gpg"
+        ssh_execute "$node_ip" "echo 'deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable' | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null"
+        docker_repo_added=1
+    else
+        log_warning "Docker repo key download failed on $node_ip; falling back to Ubuntu containerd"
+    fi
+
+    if [[ $docker_repo_added -eq 1 ]]; then
+        ssh_execute "$node_ip" "sudo apt-get update -o Acquire::ForceIPv4=true"
+        ssh_execute "$node_ip" "sudo apt-get install -y containerd.io || sudo apt-get install -y containerd"
+    else
+        ssh_execute "$node_ip" "sudo apt-get update -o Acquire::ForceIPv4=true"
+        ssh_execute "$node_ip" "sudo apt-get install -y containerd"
+    fi
     
     # Create containerd config directory if needed
     ssh_execute "$node_ip" "sudo mkdir -p /etc/containerd"
