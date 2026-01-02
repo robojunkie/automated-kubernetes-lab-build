@@ -195,6 +195,25 @@ kind: Namespace
 metadata:
   name: portainer
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: portainer-sa
+  namespace: portainer
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: portainer-cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: portainer-sa
+  namespace: portainer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -210,6 +229,7 @@ spec:
       labels:
         app: portainer
     spec:
+      serviceAccountName: portainer-sa
       containers:
       - name: portainer
         image: portainer/portainer-ce:2.20.3
