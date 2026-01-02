@@ -191,6 +191,11 @@ collect_user_input() {
     SUBNET_CIDR="$SUBNET"
     
     # Public container access
+    log_info ""
+    log_info "Container Access Options:"
+    log_info "  • NO (default):  Containers are only reachable from within your lab network"
+    log_info "  • YES:          Containers get public IPs via MetalLB (load balancer)"
+    log_info ""
     read -r -p "Make containers publicly accessible? (yes/no) [default: no]: " PUBLIC_CONTAINERS_INPUT
     PUBLIC_CONTAINERS_INPUT="${PUBLIC_CONTAINERS_INPUT:-no}"
     

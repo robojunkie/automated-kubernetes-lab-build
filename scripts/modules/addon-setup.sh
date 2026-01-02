@@ -104,6 +104,8 @@ setup_weave() {
 setup_metallb() {
     local subnet=$1
     local master_ip=$2
+    local max_retries=5
+    local retry_delay=10
     
     log_info "Setting up MetalLB for load balancing..."
     
@@ -111,16 +113,22 @@ setup_metallb() {
     log_debug "Installing MetalLB operator..."
     ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/main/config/manifests/metallb-native.yaml"
     
-    # Wait for MetalLB webhook to be ready before configuring pools
+    # Wait for MetalLB webhook to be ready (both pod and webhook service)
     log_debug "Waiting for MetalLB webhook to be ready..."
     ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=metallb -l app.kubernetes.io/component=controller -n metallb-system --timeout=300s" 2>/dev/null || true
     
-    # Give webhook a moment to start serving
-    sleep 5
+    # Wait for webhook endpoints to be available
+    log_debug "Waiting for webhook service endpoints..."
+    ssh_execute "$master_ip" "for i in {1..30}; do KUBECONFIG=/etc/kubernetes/admin.conf kubectl get endpoints metallb-webhook-service -n metallb-system --no-headers 2>/dev/null | grep -q metallb-webhook-service && break; sleep 2; done" 2>/dev/null || true
     
-    # Configure MetalLB with IP address pool
+    # Give webhook extra time to start serving
+    sleep 10
+    
+    # Configure MetalLB with IP address pool (with retry logic)
     log_debug "Configuring MetalLB IP pool..."
-    ssh_execute "$master_ip" "cat << 'EOF' | KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -
+    local attempt=1
+    while [[ $attempt -le $max_retries ]]; do
+        if ssh_execute "$master_ip" "cat << 'EOF' | KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -
 apiVersion: metallb.io/v1beta1
 kind: IPAddressPool
 metadata:
@@ -138,9 +146,18 @@ metadata:
 spec:
   ipAddressPools:
   - default
-EOF"
+EOF"; then
+            log_success "MetalLB configured"
+            return 0
+        fi
+        
+        log_debug "MetalLB config failed (attempt $attempt/$max_retries). Retrying in ${retry_delay}s..."
+        sleep "$retry_delay"
+        attempt=$((attempt + 1))
+    done
     
-    log_success "MetalLB configured"
+    log_error "Failed to configure MetalLB after $max_retries attempts"
+    return 1
 }
 
 ################################################################################
