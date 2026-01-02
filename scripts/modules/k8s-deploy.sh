@@ -240,6 +240,9 @@ join_worker_node() {
     ssh_execute "$worker_ip" "sudo systemctl stop kubelet 2>/dev/null; true" 2>/dev/null || true
     ssh_execute "$worker_ip" "sudo systemctl reset-failed kubelet 2>/dev/null; true" 2>/dev/null || true
     ssh_execute "$worker_ip" "sudo pkill -9 -f kubelet 2>/dev/null; true" 2>/dev/null || true
+    # Remove prior kubeadm/kubelet state if present (avoids FileAvailable preflight errors)
+    ssh_execute "$worker_ip" "sudo kubeadm reset -f 2>/dev/null || true"
+    ssh_execute "$worker_ip" "sudo rm -rf /etc/kubernetes /var/lib/kubelet /etc/cni/net.d 2>/dev/null || true"
     
     # Install Kubernetes binaries
     install_kubernetes_binaries "$worker_ip" "$k8s_version"
