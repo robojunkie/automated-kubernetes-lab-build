@@ -305,10 +305,6 @@ execute_deployment() {
     log_info "Deploying Kubernetes cluster..."
     deploy_kubernetes "$MASTER_NODE" "$MASTER_IP" "$K8S_VERSION"
     
-    # Setup CNI
-    log_info "Installing CNI plugin: $CNI_PLUGIN..."
-    setup_cni "$CNI_PLUGIN" "$SUBNET_CIDR"
-    
     # Optional: Setup load balancing and ingress
     if [[ "$PUBLIC_CONTAINERS" == true ]]; then
         log_info "Setting up MetalLB for public container access..."
