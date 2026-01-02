@@ -184,7 +184,9 @@ initialize_master() {
     ssh_execute "$master_ip" "sudo systemctl stop kubelet 2>/dev/null; true" 2>/dev/null || true
     ssh_execute "$master_ip" "sudo systemctl reset-failed kubelet 2>/dev/null; true" 2>/dev/null || true
     ssh_execute "$master_ip" "sudo pkill -9 -f kubelet 2>/dev/null; true" 2>/dev/null || true
-    ssh_execute "$master_ip" "sudo kubeadm reset -f || true"
+    # kubeadm reset will show warnings about failed pod cleanup if Calico is running - these are expected and harmless
+    log_debug "Running kubeadm reset (may show Calico cleanup warnings - these are expected)..."
+    ssh_execute "$master_ip" "sudo kubeadm reset -f 2>&1 | grep -v 'Failed to remove containers\\|plugin type=.*calico.*failed\\|error getting ClusterInformation' || true"
     ssh_execute "$master_ip" "sudo rm -rf /etc/cni/net.d/* /var/lib/etcd/* ~/.kube || true"
     
     # Enable kubelet (start will be handled by kubeadm init)
@@ -263,7 +265,8 @@ wait_for_node_ready() {
     
     while [[ $attempt -le $max_attempts ]]; do
         log_debug "Checking node status (attempt $attempt/$max_attempts)..."
-        local node_status=$(ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get node '$node_name' -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}' 2>/dev/null" || echo "")
+        # Use double quotes and no quotes around node_name to avoid literal quote issues in SSH
+        local node_status=$(ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get node $node_name -o jsonpath='{.status.conditions[?(@.type==\\\"Ready\\\")].status}' 2>/dev/null" || echo "")
         
         log_debug "Raw node status response: '$node_status'"
         
