@@ -142,25 +142,39 @@ setup_metallb() {
     
     # Wait for MetalLB webhook to be ready (both pod and webhook service)
     log_debug "Waiting for MetalLB controller pod to be ready..."
-    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=metallb -l app.kubernetes.io/component=controller -n metallb-system --timeout=300s" 2>/dev/null || true
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=metallb -l app.kubernetes.io/component=controller -n metallb-system --timeout=300s" || {
+        log_warning "Controller pod not ready within timeout, checking status..."
+        ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -n metallb-system -o wide"
+        ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl describe pod -l app.kubernetes.io/component=controller -n metallb-system | tail -20"
+    }
     
     # Wait for webhook service endpoints to be populated
     log_debug "Waiting for MetalLB webhook endpoints..."
+    local endpoint_ip=""
     ssh_execute "$master_ip" "for i in {1..60}; do
-        endpoints=\$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl get endpoints metallb-webhook-service -n metallb-system -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null)
-        if [[ -n \"\$endpoints\" ]]; then
-            echo \"Webhook endpoints ready: \$endpoints\"
+        endpoint_ip=\$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl get endpoints metallb-webhook-service -n metallb-system -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null)
+        if [[ -n \"\$endpoint_ip\" ]]; then
+            echo \"Webhook endpoint ready: \$endpoint_ip\"
             break
         fi
         sleep 2
     done" 2>/dev/null || true
     
-    # Verify webhook pod logs show it's serving
-    log_debug "Checking webhook pod readiness..."
-    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl logs -l app.kubernetes.io/component=controller -n metallb-system --tail=5 2>/dev/null | head -1" 2>/dev/null || true
+    # Wait for webhook to actually respond (TCP connectivity check)
+    log_debug "Verifying webhook connectivity..."
+    ssh_execute "$master_ip" "for i in {1..30}; do
+        webhook_pod=\$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pod -l app.kubernetes.io/component=controller -n metallb-system -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+        if [[ -n \"\$webhook_pod\" ]]; then
+            if KUBECONFIG=/etc/kubernetes/admin.conf kubectl exec -n metallb-system \$webhook_pod -- timeout 2 sh -c 'echo > /dev/tcp/localhost/9443' 2>/dev/null; then
+                echo \"Webhook is accepting connections\"
+                break
+            fi
+        fi
+        sleep 3
+    done" 2>/dev/null || true
     
-    # Extra wait for webhook TLS cert setup and server start
-    sleep 25
+    # Final wait for cert and webhook startup
+    sleep 10
     
     log_debug "Configuring MetalLB IP pool: ${pool_addresses}"
     local attempt=1
