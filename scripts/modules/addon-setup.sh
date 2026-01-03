@@ -140,7 +140,18 @@ setup_metallb() {
     log_debug "Installing MetalLB operator..."
     ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/main/config/manifests/metallb-native.yaml"
     
-    # Wait for MetalLB webhook to be ready (both pod and webhook service)
+    # Wait for MetalLB controller pod to be created
+    log_debug "Waiting for MetalLB controller pod to be created..."
+    ssh_execute "$master_ip" "for i in {1..60}; do
+        pod_count=\$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pod -l app.kubernetes.io/name=metallb -l app.kubernetes.io/component=controller -n metallb-system --no-headers 2>/dev/null | wc -l)
+        if [[ \$pod_count -gt 0 ]]; then
+            echo \"Controller pod created\"
+            break
+        fi
+        sleep 2
+    done"
+    
+    # Now wait for it to be ready
     log_debug "Waiting for MetalLB controller pod to be ready..."
     ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=metallb -l app.kubernetes.io/component=controller -n metallb-system --timeout=300s" || {
         log_warning "Controller pod not ready within timeout, checking status..."
