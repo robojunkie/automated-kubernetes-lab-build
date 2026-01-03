@@ -141,20 +141,26 @@ setup_metallb() {
     ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/main/config/manifests/metallb-native.yaml"
     
     # Wait for MetalLB webhook to be ready (both pod and webhook service)
-    log_debug "Waiting for MetalLB webhook to be ready..."
+    log_debug "Waiting for MetalLB controller pod to be ready..."
     ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=metallb -l app.kubernetes.io/component=controller -n metallb-system --timeout=300s" 2>/dev/null || true
     
-    # Wait for webhook service to be ready and serving requests
-    ssh_execute "$master_ip" "for i in {1..45}; do
-        endpoints=\$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl get endpoints metallb-webhook-service -n metallb-system --no-headers 2>/dev/null)
-        if [[ -n \"\$endpoints\" ]] && [[ \"\$endpoints\" != \"<none>\" ]]; then
+    # Wait for webhook service endpoints to be populated
+    log_debug "Waiting for MetalLB webhook endpoints..."
+    ssh_execute "$master_ip" "for i in {1..60}; do
+        endpoints=\$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl get endpoints metallb-webhook-service -n metallb-system -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null)
+        if [[ -n \"\$endpoints\" ]]; then
+            echo \"Webhook endpoints ready: \$endpoints\"
             break
         fi
         sleep 2
     done" 2>/dev/null || true
     
-    # Give webhook extra time to start serving requests
-    sleep 15
+    # Verify webhook pod logs show it's serving
+    log_debug "Checking webhook pod readiness..."
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl logs -l app.kubernetes.io/component=controller -n metallb-system --tail=5 2>/dev/null | head -1" 2>/dev/null || true
+    
+    # Extra wait for webhook TLS cert setup and server start
+    sleep 25
     
     log_debug "Configuring MetalLB IP pool: ${pool_addresses}"
     local attempt=1
