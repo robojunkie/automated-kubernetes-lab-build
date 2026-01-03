@@ -369,6 +369,10 @@ post_deployment_config() {
     
     if [[ "$DRY_RUN" != true ]]; then
         ssh_execute "$MASTER_IP" "cat ~/.kube/config" > "$KUBECONFIG_PATH"
+        
+        # Replace server address with actual master IP (works for both localhost and internal addresses)
+        sed -i "s|server: https://.*:6443|server: https://${MASTER_IP}:6443|g" "$KUBECONFIG_PATH"
+        
         chmod 600 "$KUBECONFIG_PATH"
         log_success "Kubeconfig saved to: $KUBECONFIG_PATH"
     fi
