@@ -4,18 +4,75 @@ A lab-agnostic, bash-based automation framework to quickly and easily deploy pro
 
 ## Overview
 
-This project automates the entire process of setting up a Kubernetes cluster using industry-standard tools and practices, without requiring expensive cloud environments. It's designed for IT professionals, cloud engineers, and hobbyists who want to practice with real-world Kubernetes configurations.
+This project automates the entire process of setting up a **complete Kubernetes lab environment** with enterprise-grade components, without requiring expensive cloud infrastructure. Perfect for:
+- 🎓 Learning Kubernetes from scratch
+- 🧪 Testing and developing applications
+- 🔬 Experimenting with cloud-native technologies
+- 🏠 Building a powerful home lab
+- 💼 Training and certification prep
+
+### What You Get
+
+**Core Cluster** (Always Installed):
+- ✅ Kubernetes 1.28 cluster (kubeadm)
+- ✅ Calico CNI networking (OS-optimized)
+- ✅ MetalLB load balancer (optional)
+- ✅ Local-path storage provisioner
+
+**Optional Infrastructure** (Choose During Setup):
+- 🎯 **Portainer** - Web UI for visual cluster management
+- 📦 **Container Registry** - Private Docker registry with web UI
+- 🌐 **Nginx Ingress** - Hostname-based routing
+- 🔒 **Cert-Manager** - Automatic TLS certificates
+- 📊 **Monitoring** - Prometheus + Grafana dashboards
+- 🗄️ **MinIO** - S3-compatible object storage
+- 📝 **Git Server** - Gitea (lightweight) or GitLab (full-featured)
+- 💾 **Longhorn** - Distributed storage with replication
+
+**Result**: A production-like Kubernetes environment running on your own hardware!
 
 ### Key Features
 
-- **Lab-Agnostic**: Works with any underlying virtualization platform (Proxmox, VMware, VirtualBox, bare metal)
-- **Interactive Configuration**: Prompts users for cluster topology, node details, and networking configuration
-- **Flexible Networking**: Automatically configures networking based on user subnet specifications
-- **LAN Access**: Containers are accessible from your local network by default
-- **Public Service Support**: Easily expose services to the public if needed
-- **Production-Grade**: Uses `kubeadm` for real-world Kubernetes setup (matching production environments)
-- **Jump Box Compatible**: Runs from a single jump box with SSH access to all nodes
-- **Extensible**: Modular design allows for easy addition of ingress controllers, monitoring, and storage solutions
+- **🚀 Zero-to-Cluster in 15 Minutes**: Fully automated deployment of production-grade Kubernetes
+- **🖥️ Multi-OS Support**: Ubuntu 24.04 and Rocky Linux 9.6 fully tested and working
+- **🔧 Lab-Agnostic**: Works with Proxmox, VMware, VirtualBox, bare metal, or any VM platform
+- **📦 Complete Infrastructure Stack**: Optional components for a full-featured lab environment:
+  - Container Registry (Docker Registry + Web UI)
+  - Ingress Controller (Nginx)
+  - TLS Certificates (Cert-Manager)
+  - Monitoring (Prometheus + Grafana)
+  - Object Storage (MinIO S3-compatible)
+  - Git Server (Gitea or GitLab)
+  - Distributed Storage (Longhorn)
+- **🌐 Real LoadBalancer IPs**: MetalLB provides actual IPs from your network (not just NodePort)
+- **🎯 Production-Grade**: Uses `kubeadm` for real-world Kubernetes setup matching production environments
+- **📚 Comprehensive Documentation**: Beginner-friendly guides assuming no prior Kubernetes knowledge
+- **🔄 SSH Orchestration**: Single jump box controls everything - no need to login to each node
+- **🛡️ Firewall-Aware**: Automatically configures firewalld on Rocky Linux with all necessary ports
+- **💾 Storage Options**: Local-path (fast) or Longhorn (replicated) storage classes
+
+## Documentation
+
+### 📚 New to Kubernetes?
+Start here: **[Getting Started Guide](GETTING_STARTED.md)** - Complete beginner-friendly walkthrough (15-30 minutes)
+
+### 📖 Component Reference
+**[Components Guide](COMPONENTS.md)** - Detailed reference for all 15+ components with usage examples
+
+### 🎯 Component Quick Start Guides
+Master individual components:
+- [Portainer](docs/quickstart/PORTAINER.md) - Visual cluster management (start here!)
+- [Container Registry](docs/quickstart/REGISTRY.md) - Store and manage your images
+- [Nginx Ingress](docs/quickstart/INGRESS.md) - Hostname-based routing
+- [Monitoring](docs/quickstart/MONITORING.md) - Prometheus + Grafana dashboards
+- [MinIO](docs/quickstart/MINIO.md) - S3-compatible object storage
+- [Git Server](docs/quickstart/GIT.md) - Gitea or GitLab for version control
+- [Longhorn](docs/quickstart/LONGHORN.md) - Distributed storage with replication
+
+### 🏗️ Architecture & Troubleshooting
+- [Architecture Overview](docs/ARCHITECTURE.md) - How all components connect
+- [Networking Details](docs/NETWORKING.md) - Deep dive into CNI, MetalLB, and ingress
+- [Troubleshooting Guide](docs/TROUBLESHOOTING.md) - Common issues and solutions
 
 ## Quick Start
 
@@ -23,12 +80,12 @@ This project automates the entire process of setting up a Kubernetes cluster usi
 
 - A jump box (Linux) with SSH access to your cluster nodes
 - Pre-provisioned nodes (VMs or physical machines) with a supported Linux distribution:
-  - Ubuntu 20.04+
-  - Debian 10+
-  - CentOS 7+
+  - **Ubuntu 24.04 LTS** (tested ✅)
+  - **Rocky Linux 9.6** (tested ✅)
+  - Debian/RHEL-family variants (should work)
 - Minimum hardware per node:
   - Master: 2+ CPUs, 2GB+ RAM
-  - Worker: 1+ CPUs, 1GB+ RAM
+  - Worker: 1+ CPUs, 1GB+ RAM (4GB+ recommended for full stack)
 - Network connectivity between all nodes
 
 ### Installation & Deployment
@@ -47,11 +104,18 @@ This project automates the entire process of setting up a Kubernetes cluster usi
 3. Follow the interactive prompts to provide:
    - Master node hostname/IP
    - Number and details of worker nodes
-   - Subnet information for networking
-   - Whether containers should be public by default
-   - Optional add-ons (ingress, monitoring, storage)
+   - MetalLB IP pool (if using LoadBalancer services)
+   - Optional components:
+     - Portainer (visual cluster management)
+     - Container Registry (store your images)
+     - Nginx Ingress (hostname routing)
+     - Cert-Manager (TLS certificates)
+     - Monitoring Stack (Prometheus + Grafana)
+     - MinIO (object storage)
+     - Git Server (Gitea or GitLab)
+     - Longhorn (distributed storage)
 
-4. Sit back and let the script automate the rest!
+4. Sit back and let the script automate the rest! (15-30 minutes)
 
 ## Project Structure
 
