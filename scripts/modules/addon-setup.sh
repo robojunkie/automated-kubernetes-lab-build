@@ -140,9 +140,12 @@ setup_metallb() {
     log_debug "Installing MetalLB operator..."
     ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.9/config/manifests/metallb-native.yaml"
     
-    # Create memberlist secret for speaker pods
+    # Create memberlist secret for speaker pods (generate random key on master node)
     log_debug "Creating memberlist secret..."
-    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl create secret generic -n metallb-system memberlist --from-literal=secretkey=\$(openssl rand -base64 128) 2>/dev/null || true"
+    ssh_execute "$master_ip" "bash -c 'KUBECONFIG=/etc/kubernetes/admin.conf kubectl create secret generic -n metallb-system memberlist --from-literal=secretkey=\$(openssl rand -base64 128)'"
+    
+    # Wait a few seconds for namespace and resources to settle
+    sleep 5
     
     # Wait for MetalLB controller pod to be created
     log_debug "Waiting for MetalLB controller pod to be created..."
