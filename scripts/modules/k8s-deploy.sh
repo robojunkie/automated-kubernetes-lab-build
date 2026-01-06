@@ -241,6 +241,7 @@ ensure_container_runtime_ready_rhel() {
     # CNI plugin ports (supporting all options)
     ssh_execute "$node_ip" "sudo firewall-cmd --permanent --add-port=179/tcp 2>/dev/null || true"  # BGP for Calico
     ssh_execute "$node_ip" "sudo firewall-cmd --permanent --add-port=4789/udp 2>/dev/null || true"  # VXLAN for Calico
+    ssh_execute "$node_ip" "sudo firewall-cmd --permanent --add-port=5473/tcp 2>/dev/null || true"  # Typha for Calico
     ssh_execute "$node_ip" "sudo firewall-cmd --permanent --add-port=8472/udp 2>/dev/null || true"  # VXLAN for Flannel
     ssh_execute "$node_ip" "sudo firewall-cmd --permanent --add-port=6783/tcp 2>/dev/null || true"  # Weave control
     ssh_execute "$node_ip" "sudo firewall-cmd --permanent --add-port=6783/udp 2>/dev/null || true"  # Weave data (sleeve)
