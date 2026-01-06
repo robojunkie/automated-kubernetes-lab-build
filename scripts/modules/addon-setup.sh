@@ -62,6 +62,20 @@ setup_calico() {
     
     log_debug "Installing Calico CNI..."
     
+    # Detect OS family for encapsulation mode
+    local os_family=$(detect_os_family "$master_ip")
+    local encap_mode="VXLANCrossSubnet"
+    local bgp_setting=""
+    
+    # Use simpler VXLAN-only mode for RHEL/Rocky to avoid BGP/BIRD firewall issues
+    if [[ "$os_family" == "rhel" ]]; then
+        encap_mode="VXLAN"
+        bgp_setting="bgp: Disabled"
+        log_debug "Using VXLAN-only mode for RHEL-family OS"
+    else
+        log_debug "Using VXLANCrossSubnet mode for Debian-family OS"
+    fi
+    
     # Execute kubectl on master node via SSH, using kubeadm kubeconfig
     # Use --server-side to avoid annotation size limits
     ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply --server-side -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/tigera-operator.yaml"
@@ -69,7 +83,7 @@ setup_calico() {
     # Wait for operator to be ready
     sleep 10
     
-    # Create Calico custom resource via SSH
+    # Create Calico custom resource via SSH (with OS-specific settings)
     ssh_execute "$master_ip" "cat << 'CALICO_EOF' | KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -
 apiVersion: operator.tigera.io/v1
 kind: Installation
@@ -77,10 +91,11 @@ metadata:
   name: default
 spec:
   calicoNetwork:
+    ${bgp_setting}
     ipPools:
     - blockSize: 26
       cidr: ${pod_cidr}
-      encapsulation: VXLANCrossSubnet
+      encapsulation: ${encap_mode}
       natOutgoing: Enabled
       nodeSelector: all()
 CALICO_EOF"

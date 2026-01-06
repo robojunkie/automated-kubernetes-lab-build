@@ -237,8 +237,16 @@ ensure_container_runtime_ready_rhel() {
     ssh_execute "$node_ip" "sudo firewall-cmd --permanent --add-port=10250-10252/tcp 2>/dev/null || true"  # kubelet, scheduler, controller
     ssh_execute "$node_ip" "sudo firewall-cmd --permanent --add-port=10255/tcp 2>/dev/null || true"  # read-only kubelet
     ssh_execute "$node_ip" "sudo firewall-cmd --permanent --add-port=30000-32767/tcp 2>/dev/null || true"  # NodePort range
+    
+    # CNI plugin ports (supporting all options)
     ssh_execute "$node_ip" "sudo firewall-cmd --permanent --add-port=179/tcp 2>/dev/null || true"  # BGP for Calico
     ssh_execute "$node_ip" "sudo firewall-cmd --permanent --add-port=4789/udp 2>/dev/null || true"  # VXLAN for Calico
+    ssh_execute "$node_ip" "sudo firewall-cmd --permanent --add-port=8472/udp 2>/dev/null || true"  # VXLAN for Flannel
+    ssh_execute "$node_ip" "sudo firewall-cmd --permanent --add-port=6783/tcp 2>/dev/null || true"  # Weave control
+    ssh_execute "$node_ip" "sudo firewall-cmd --permanent --add-port=6783/udp 2>/dev/null || true"  # Weave data (sleeve)
+    ssh_execute "$node_ip" "sudo firewall-cmd --permanent --add-port=6784/udp 2>/dev/null || true"  # Weave data (fastdp)
+    
+    # Webhook and service ports
     ssh_execute "$node_ip" "sudo firewall-cmd --permanent --add-port=443/tcp 2>/dev/null || true"  # HTTPS for webhooks/services
     ssh_execute "$node_ip" "sudo firewall-cmd --permanent --add-port=9443/tcp 2>/dev/null || true"  # Webhook server port
     
