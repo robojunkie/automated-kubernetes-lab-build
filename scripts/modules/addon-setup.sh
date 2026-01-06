@@ -142,7 +142,7 @@ setup_metallb() {
     
     # Create memberlist secret for speaker pods (generate random key on master node)
     log_debug "Creating memberlist secret..."
-    ssh_execute "$master_ip" "bash -c 'KUBECONFIG=/etc/kubernetes/admin.conf kubectl create secret generic -n metallb-system memberlist --from-literal=secretkey=\$(openssl rand -base64 128)'"
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl create secret generic -n metallb-system memberlist --from-literal=secretkey=\$(openssl rand -hex 64)"
     
     # Wait a few seconds for namespace and resources to settle
     sleep 5
