@@ -45,6 +45,17 @@ SSH_KEY=""
 LOG_FILE="${PROJECT_ROOT}/deployment.log"
 DRY_RUN=false
 
+# Optional infrastructure components
+INSTALL_PORTAINER=false
+INSTALL_REGISTRY=false
+INSTALL_INGRESS=false
+INSTALL_CERTMANAGER=false
+INSTALL_MONITORING=false
+INSTALL_MINIO=false
+INSTALL_GIT=false
+GIT_CHOICE="gitea"  # gitea or gitlab
+INSTALL_LONGHORN=false
+
 ################################################################################
 # Display Banner
 ################################################################################
@@ -248,13 +259,67 @@ collect_user_input() {
     CNI_PLUGIN="${CNI_PLUGIN:-calico}"
     validate_cni_plugin "$CNI_PLUGIN"
     
-        # Portainer (dashboard) install
-        read -r -p "Install Portainer dashboard? (yes/no) [default: yes]: " PORTAINER_INPUT
-        PORTAINER_INPUT="${PORTAINER_INPUT:-yes}"
-        INSTALL_PORTAINER=false
-        if [[ "$PORTAINER_INPUT" =~ ^(yes|y|true)$ ]]; then
-            INSTALL_PORTAINER=true
-        fi
+        # Optional infrastructure components
+    log_info ""
+    log_info "Optional Lab Infrastructure:"
+    
+    # Portainer (dashboard)
+    read -r -p "Install Portainer dashboard? (yes/no) [default: yes]: " PORTAINER_INPUT
+    PORTAINER_INPUT="${PORTAINER_INPUT:-yes}"
+    if [[ "$PORTAINER_INPUT" =~ ^(yes|y|true)$ ]]; then
+        INSTALL_PORTAINER=true
+    fi
+    
+    # Container Registry
+    read -r -p "Install container registry (Docker Registry + UI)? (yes/no) [default: yes]: " REGISTRY_INPUT
+    REGISTRY_INPUT="${REGISTRY_INPUT:-yes}"
+    if [[ "$REGISTRY_INPUT" =~ ^(yes|y|true)$ ]]; then
+        INSTALL_REGISTRY=true
+    fi
+    
+    # Ingress Controller
+    read -r -p "Install nginx ingress controller? (yes/no) [default: yes]: " INGRESS_INPUT
+    INGRESS_INPUT="${INGRESS_INPUT:-yes}"
+    if [[ "$INGRESS_INPUT" =~ ^(yes|y|true)$ ]]; then
+        INSTALL_INGRESS=true
+    fi
+    
+    # Cert-manager
+    read -r -p "Install cert-manager (TLS certificates)? (yes/no) [default: no]: " CERTMGR_INPUT
+    CERTMGR_INPUT="${CERTMGR_INPUT:-no}"
+    if [[ "$CERTMGR_INPUT" =~ ^(yes|y|true)$ ]]; then
+        INSTALL_CERTMANAGER=true
+    fi
+    
+    # Monitoring (Prometheus + Grafana)
+    read -r -p "Install monitoring (Prometheus + Grafana)? (yes/no) [default: no]: " MONITORING_INPUT
+    MONITORING_INPUT="${MONITORING_INPUT:-no}"
+    if [[ "$MONITORING_INPUT" =~ ^(yes|y|true)$ ]]; then
+        INSTALL_MONITORING=true
+    fi
+    
+    # MinIO (S3-compatible storage)
+    read -r -p "Install MinIO (S3-compatible object storage)? (yes/no) [default: no]: " MINIO_INPUT
+    MINIO_INPUT="${MINIO_INPUT:-no}"
+    if [[ "$MINIO_INPUT" =~ ^(yes|y|true)$ ]]; then
+        INSTALL_MINIO=true
+    fi
+    
+    # Git Server
+    read -r -p "Install Git server? (yes/no) [default: no]: " GIT_INPUT
+    GIT_INPUT="${GIT_INPUT:-no}"
+    if [[ "$GIT_INPUT" =~ ^(yes|y|true)$ ]]; then
+        INSTALL_GIT=true
+        read -r -p "Choose Git server (gitea/gitlab) [default: gitea]: " GIT_CHOICE
+        GIT_CHOICE="${GIT_CHOICE:-gitea}"
+    fi
+    
+    # Longhorn (distributed storage)
+    read -r -p "Install Longhorn distributed storage? (yes/no) [default: no]: " LONGHORN_INPUT
+    LONGHORN_INPUT="${LONGHORN_INPUT:-no}"
+    if [[ "$LONGHORN_INPUT" =~ ^(yes|y|true)$ ]]; then
+        INSTALL_LONGHORN=true
+    fi
 }
 
 ################################################################################
@@ -349,6 +414,48 @@ execute_deployment() {
         setup_portainer "$MASTER_IP" "${PUBLIC_CONTAINERS:-false}"
     else
         log_info "Skipping Portainer deployment (per user choice)"
+    fi
+
+    # Optional: Deploy container registry
+    if [[ "$INSTALL_REGISTRY" == true ]]; then
+        log_info "Deploying container registry..."
+        setup_registry "$MASTER_IP" "${PUBLIC_CONTAINERS:-false}"
+    fi
+
+    # Optional: Deploy nginx ingress controller
+    if [[ "$INSTALL_INGRESS" == true ]]; then
+        log_info "Deploying nginx ingress controller..."
+        setup_ingress "$MASTER_IP"
+    fi
+
+    # Optional: Deploy cert-manager
+    if [[ "$INSTALL_CERTMANAGER" == true ]]; then
+        log_info "Deploying cert-manager..."
+        setup_certmanager "$MASTER_IP"
+    fi
+
+    # Optional: Deploy monitoring (Prometheus + Grafana)
+    if [[ "$INSTALL_MONITORING" == true ]]; then
+        log_info "Deploying monitoring stack..."
+        setup_monitoring "$MASTER_IP" "${PUBLIC_CONTAINERS:-false}"
+    fi
+
+    # Optional: Deploy MinIO
+    if [[ "$INSTALL_MINIO" == true ]]; then
+        log_info "Deploying MinIO..."
+        setup_minio "$MASTER_IP" "${PUBLIC_CONTAINERS:-false}"
+    fi
+
+    # Optional: Deploy Git server
+    if [[ "$INSTALL_GIT" == true ]]; then
+        log_info "Deploying Git server ($GIT_CHOICE)..."
+        setup_git "$MASTER_IP" "$GIT_CHOICE" "${PUBLIC_CONTAINERS:-false}"
+    fi
+
+    # Optional: Deploy Longhorn (must be before apps that need distributed storage)
+    if [[ "$INSTALL_LONGHORN" == true ]]; then
+        log_info "Deploying Longhorn distributed storage..."
+        setup_longhorn "$MASTER_IP" "${WORKER_IPS[@]}"
     fi
 
     log_success "Kubernetes cluster deployment completed successfully!"

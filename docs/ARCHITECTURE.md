@@ -1,53 +1,300 @@
 # Architecture Overview
 
-## High-Level Design
+Understanding how all the pieces fit together in your Kubernetes lab.
 
-The Automated Kubernetes Lab Build framework is designed to automate the deployment of a production-grade Kubernetes cluster in lab environments. The architecture is modular, allowing for flexible deployment across various infrastructure platforms.
+## High-Level Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Jump Box                                │
-│  (Entry Point - runs build-lab.sh)                          │
-└──────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                            JUMP BOX (Your Machine)                       │
+│  • SSH orchestration                                                     │
+│  • kubectl (KUBECONFIG points to master)                                 │
+│  • Triggers automation scripts                                           │
+└────────────────────┬────────────────────────────────────────────────────┘
+                     │ SSH
+                     ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        KUBERNETES CONTROL PLANE                          │
+│                              (Master Node)                               │
+│                                                                          │
+│  ┌────────────────────────────────────────────────────────────────────┐ │
+│  │  Core Components:                                                   │ │
+│  │  • kube-apiserver (6443)                                            │ │
+│  │  • kube-controller-manager                                          │ │
+│  │  • kube-scheduler                                                   │ │
+│  │  • etcd (2379-2380)                                                 │ │
+│  │  • kubelet (10250)                                                  │ │
+│  └────────────────────────────────────────────────────────────────────┘ │
+└────────────────────┬────────────────────────────────────────────────────┘
+                     │
+          ┌──────────┴──────────┬──────────────────┐
+          ▼                     ▼                  ▼
+┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐
+│   Worker Node 1  │  │   Worker Node 2  │  │   Worker Node 3  │
+│                  │  │                  │  │                  │
+│  • kubelet       │  │  • kubelet       │  │  • kubelet       │
+│  • containerd    │  │  • containerd    │  │  • containerd    │
+│  • kube-proxy    │  │  • kube-proxy    │  │  • kube-proxy    │
+└──────────────────┘  └──────────────────┘  └──────────────────┘
+```
+
+## Network Architecture
+
+```
+                    ┌────────────────────────────────────────┐
+                    │         External Network               │
+                    │      (Your Home/Lab Network)           │
+                    │     192.168.1.0/24 (example)           │
+                    └──────────────┬─────────────────────────┘
+                                   │
+                    ┌──────────────┴─────────────────┐
+                    │        MetalLB L2 Mode         │
+                    │  (Assigns IPs from pool)       │
+                    │  e.g., 192.168.1.210-219       │
+                    └──────────────┬─────────────────┘
+                                   │
+            ┌──────────────────────┼─────────────────────────┐
+            │                      │                         │
+            ▼                      ▼                         ▼
+    ┌──────────────┐      ┌──────────────┐         ┌──────────────┐
+    │   Ingress    │      │  Portainer   │         │   Grafana    │
+    │ LoadBalancer │      │ LoadBalancer │         │ LoadBalancer │
+    │ 192.168.1.210│      │ 192.168.1.211│         │ 192.168.1.212│
+    │              │      │              │         │              │
+    │ Port 80/443  │      │  Port 9000   │         │  Port 3000   │
+    └──────┬───────┘      └──────┬───────┘         └──────┬───────┘
+           │                     │                        │
+           │                     │                        │
+           │    ┌────────────────┴────────────┐           │
+           │    │                             │           │
+           ▼    ▼                             ▼           ▼
+    ┌─────────────────────────────────────────────────────────────┐
+    │              Kubernetes Service Network                      │
+    │                 10.96.0.0/12 (CIDR)                          │
+    │                                                               │
+    │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
+    │  │   Service   │  │   Service   │  │   Service   │          │
+    │  │  ClusterIP  │  │  ClusterIP  │  │  ClusterIP  │          │
+    │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘          │
+    │         │                │                │                  │
+    └─────────┼────────────────┼────────────────┼──────────────────┘
+              │                │                │
+              ▼                ▼                ▼
+    ┌─────────────────────────────────────────────────────────────┐
+    │              Kubernetes Pod Network                          │
+    │               10.244.0.0/16 (CIDR)                           │
+    │                  (Calico CNI)                                │
+    │                                                               │
+    │  ┌───────┐  ┌───────┐  ┌───────┐  ┌───────┐  ┌───────┐     │
+    │  │  Pod  │  │  Pod  │  │  Pod  │  │  Pod  │  │  Pod  │     │
+    │  │ App 1 │  │ App 2 │  │ DB 1  │  │ DB 2  │  │ Cache │     │
+    │  └───────┘  └───────┘  └───────┘  └───────┘  └───────┘     │
+    │                                                               │
+    └───────────────────────────────────────────────────────────────┘
+```
+
+## Component Interaction Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         USER / APPLICATION                               │
+└──────────┬──────────────────────────────────────────────────────────────┘
            │
-           ├─── SSH ──┬─── SSH ──┬─── SSH ───...
-           │          │          │
-    ┌──────▼──┐  ┌────▼──┐  ┌───▼────┐
-    │ Master  │  │Worker │  │Worker  │
-    │  Node   │  │  Node │  │  Node  │
-    │(Control)│  │  1    │  │  2     │
-    └──────────┘  └───────┘  └────────┘
+           │ HTTP/HTTPS (hostname-based routing)
+           │ app1.lab.local, app2.lab.local, etc.
+           │
+           ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      NGINX INGRESS CONTROLLER                            │
+│  • Hostname-based routing                                                │
+│  • TLS termination (with cert-manager)                                   │
+│  • Path-based routing                                                    │
+│  Port: 80 (HTTP), 443 (HTTPS)                                            │
+└──────────┬──────────────────────────────────────────────────────────────┘
+           │
+           │ Forwards to appropriate Service
+           │
+           ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      KUBERNETES SERVICES                                 │
+│  • ClusterIP: Internal routing                                           │
+│  • LoadBalancer: External access via MetalLB                             │
+│  • NodePort: Access via node IP + port                                   │
+└──────────┬──────────────────────────────────────────────────────────────┘
+           │
+           │ Load balances to healthy pods
+           │
+           ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         APPLICATION PODS                                 │
+│  • Your containerized applications                                       │
+│  • Scaled horizontally (multiple replicas)                               │
+│  • Health checks (liveness/readiness probes)                             │
+└──────────┬────────────────────────────────────┬───────────────────────────┘
+           │                                    │
+           │ Reads/Writes                       │ Pushes Metrics
+           │                                    │
+           ▼                                    ▼
+┌─────────────────────────┐         ┌─────────────────────────────────────┐
+│    STORAGE LAYER        │         │      MONITORING LAYER                │
+│                         │         │                                      │
+│  ┌──────────────────┐   │         │  ┌────────────────────────────────┐ │
+│  │  Local-Path      │   │         │  │  Prometheus                    │ │
+│  │  (default)       │   │         │  │  • Scrapes metrics from pods   │ │
+│  │  • Fast          │   │         │  │  • Stores time-series data     │ │
+│  │  • Node-local    │   │         │  │  • Alerts on thresholds        │ │
+│  └──────────────────┘   │         │  └────────────┬───────────────────┘ │
+│                         │         │               │                     │
+│  ┌──────────────────┐   │         │               │ Visualized by       │
+│  │  Longhorn        │   │         │               ▼                     │
+│  │  (optional)      │   │         │  ┌────────────────────────────────┐ │
+│  │  • Replicated    │   │         │  │  Grafana                       │ │
+│  │  • Snapshots     │   │         │  │  • Dashboards                  │ │
+│  │  • HA storage    │   │         │  │  • Alerts visualization        │ │
+│  └──────────────────┘   │         │  │  • User-facing UI              │ │
+│                         │         │  └────────────────────────────────┘ │
+│  ┌──────────────────┐   │         └─────────────────────────────────────┘
+│  │  MinIO (S3)      │   │
+│  │  • Object storage│   │
+│  │  • Backups       │   │
+│  └──────────────────┘   │
+└─────────────────────────┘
 ```
 
-## Components
+## Management & Development Tools Flow
 
-### 1. Jump Box
-- **Purpose**: Central orchestration point for cluster deployment
-- **Requirements**: Linux, Bash, SSH access to all nodes
-- **Role**: Runs the main deployment script and orchestrates setup
+```
+                 ┌─────────────────────────────────────┐
+                 │         DEVELOPER WORKFLOW          │
+                 └──────────────┬──────────────────────┘
+                                │
+                                │
+        ┌───────────────────────┼───────────────────────┐
+        │                       │                       │
+        ▼                       ▼                       ▼
+┌──────────────┐        ┌──────────────┐       ┌──────────────┐
+│   PORTAINER  │        │  GIT SERVER  │       │   REGISTRY   │
+│   (Web UI)   │        │ (Gitea/GitLab)│       │ (Docker Reg) │
+│              │        │              │       │              │
+│ • View pods  │        │ • Git repos  │       │ • Store      │
+│ • Deploy     │        │ • CI/CD      │       │   images     │
+│ • Logs       │        │ • Webhooks   │       │ • Private    │
+│ • Exec       │        │              │       │   registry   │
+└──────────────┘        └──────┬───────┘       └──────┬───────┘
+                               │                      │
+                               │ Push trigger         │ Push image
+                               ▼                      ▼
+                        ┌──────────────────────────────────┐
+                        │       CI/CD PIPELINE             │
+                        │                                  │
+                        │  1. Code pushed to Git           │
+                        │  2. Webhook triggers build       │
+                        │  3. Build Docker image           │
+                        │  4. Push to Registry             │
+                        │  5. Deploy to Kubernetes         │
+                        └──────────────┬───────────────────┘
+                                       │
+                                       │ kubectl apply
+                                       ▼
+                        ┌──────────────────────────────────┐
+                        │    KUBERNETES CLUSTER            │
+                        │  (deploys new version)           │
+                        └──────────────────────────────────┘
+```
 
-### 2. Master Node (Control Plane)
-- **Role**: Manages the Kubernetes cluster
-- **Components**:
-  - API Server: Kubernetes API endpoint
-  - etcd: Cluster state storage
-  - Controller Manager: Manages cluster controllers
-  - Scheduler: Assigns pods to nodes
-  - kubelet: Node agent
+## Storage Architecture Detail
 
-### 3. Worker Nodes
-- **Role**: Runs container workloads
-- **Components**:
-  - kubelet: Node agent
-  - Container Runtime (containerd): Runs containers
-  - kube-proxy: Network proxy
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        APPLICATION POD                                   │
+│  Container needs persistent storage                                      │
+└──────────────────┬──────────────────────────────────────────────────────┘
+                   │
+                   │ Requests PVC (PersistentVolumeClaim)
+                   │
+                   ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     STORAGE CLASSES                                      │
+│                                                                          │
+│  ┌──────────────────┐                    ┌──────────────────┐           │
+│  │   local-path     │                    │    longhorn      │           │
+│  │   (default)      │                    │   (replicated)   │           │
+│  └────────┬─────────┘                    └────────┬─────────┘           │
+│           │                                       │                     │
+└───────────┼───────────────────────────────────────┼─────────────────────┘
+            │                                       │
+            │ Provisions PV                         │ Provisions PV
+            │                                       │
+            ▼                                       ▼
+┌───────────────────────┐          ┌────────────────────────────────────┐
+│  LOCAL-PATH VOLUME    │          │      LONGHORN VOLUME               │
+│                       │          │                                    │
+│  • Stored on single   │          │  ┌─────────────┐ ┌─────────────┐  │
+│    node's disk        │          │  │  Replica 1  │ │  Replica 2  │  │
+│  • Fast               │          │  │  (Worker 1) │ │  (Worker 2) │  │
+│  • No redundancy      │          │  └─────────────┘ └─────────────┘  │
+│                       │          │  ┌─────────────┐                  │
+│  /opt/local-path-     │          │  │  Replica 3  │                  │
+│  provisioner/         │          │  │  (Worker 3) │                  │
+│  pvc-xxx/             │          │  └─────────────┘                  │
+│                       │          │                                    │
+│  ❌ Pod dies if node  │          │  ✅ Survives node failure          │
+│     fails             │          │  ✅ Snapshots & backups            │
+│                       │          │                                    │
+└───────────────────────┘          └────────────────────────────────────┘
+```
 
-## Networking
+## Security Boundaries
 
-### Pod Network
-- **CIDR**: 10.244.0.0/16 (default, customizable)
-- **CNI Options**:
-  - **Calico**: High-performance, supports network policies
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         EXTERNAL NETWORK                                 │
+│  • Untrusted                                                             │
+│  • Firewall rules control access                                         │
+└──────────────────┬──────────────────────────────────────────────────────┘
+                   │
+                   │ Allowed ports: LoadBalancer IPs, NodePorts
+                   │
+                   ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      CLUSTER PERIMETER                                   │
+│  • MetalLB LoadBalancer IPs                                              │
+│  • NodePort services (30000-32767)                                       │
+│  • Ingress controller (80, 443)                                          │
+└──────────────────┬──────────────────────────────────────────────────────┘
+                   │
+                   │ Routes to services
+                   │
+                   ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     KUBERNETES RBAC                                      │
+│  • ServiceAccounts                                                       │
+│  • Roles and RoleBindings                                                │
+│  • ClusterRoles and ClusterRoleBindings                                  │
+│  Example: Portainer has cluster-admin                                    │
+└──────────────────┬──────────────────────────────────────────────────────┘
+                   │
+                   │ Controls access to Kubernetes API
+                   │
+                   ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        NAMESPACES                                        │
+│  Logical isolation boundaries                                            │
+│                                                                          │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐   │
+│  │   default   │  │  portainer  │  │  metallb-   │  │ monitoring  │   │
+│  │             │  │             │  │   system    │  │             │   │
+│  │ Your apps   │  │ Management  │  │ Networking  │  │ Observability│  │
+│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘   │
+│                                                                          │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐   │
+│  │  registry   │  │    minio    │  │     git     │  │  longhorn-  │   │
+│  │             │  │             │  │             │  │   system    │   │
+│  │ Container   │  │   Storage   │  │ Source Ctrl │  │  Storage    │   │
+│  │  Registry   │  │             │  │             │  │             │   │
+│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘   │
+└─────────────────────────────────────────────────────────────────────────┘
+```
   - **Flannel**: Simple overlay network
   - **Weave**: Full mesh network
 

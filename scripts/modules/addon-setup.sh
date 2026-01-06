@@ -501,3 +501,520 @@ ensure_helm_installed() {
         log_debug "Helm is already installed"
     fi
 }
+# Additional lab infrastructure components
+################################################################################
+
+################################################################################
+# Setup Container Registry (Docker Registry + UI)
+################################################################################
+setup_registry() {
+    local master_ip=$1
+    local use_loadbalancer=${2:-false}
+    
+    log_info "Setting up container registry..."
+    
+    # Create namespace
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl create namespace registry || true"
+    
+    # Deploy Docker Registry with persistent storage
+    ssh_execute "$master_ip" "cat << 'EOF' | KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: registry-data
+  namespace: registry
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docker-registry
+  namespace: registry
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: docker-registry
+  template:
+    metadata:
+      labels:
+        app: docker-registry
+    spec:
+      containers:
+      - name: registry
+        image: registry:2
+        ports:
+        - containerPort: 5000
+        env:
+        - name: REGISTRY_STORAGE_DELETE_ENABLED
+          value: \"true\"
+        volumeMounts:
+        - name: registry-data
+          mountPath: /var/lib/registry
+      volumes:
+      - name: registry-data
+        persistentVolumeClaim:
+          claimName: registry-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: docker-registry
+  namespace: registry
+spec:
+  type: $([ \"$use_loadbalancer\" = true ] && echo \"LoadBalancer\" || echo \"NodePort\")
+  ports:
+  - port: 5000
+    targetPort: 5000
+    $([ \"$use_loadbalancer\" = false ] && echo \"nodePort: 30500\" || echo \"\")
+  selector:
+    app: docker-registry
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: registry-ui
+  namespace: registry
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: registry-ui
+  template:
+    metadata:
+      labels:
+        app: registry-ui
+    spec:
+      containers:
+      - name: ui
+        image: joxit/docker-registry-ui:latest
+        ports:
+        - containerPort: 80
+        env:
+        - name: REGISTRY_TITLE
+          value: \"Lab Container Registry\"
+        - name: REGISTRY_URL
+          value: \"http://docker-registry:5000\"
+        - name: DELETE_IMAGES
+          value: \"true\"
+        - name: SINGLE_REGISTRY
+          value: \"true\"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: registry-ui
+  namespace: registry
+spec:
+  type: $([ \"$use_loadbalancer\" = true ] && echo \"LoadBalancer\" || echo \"NodePort\")
+  ports:
+  - port: 80
+    targetPort: 80
+    $([ \"$use_loadbalancer\" = false ] && echo \"nodePort: 30501\" || echo \"\")
+  selector:
+    app: registry-ui
+EOF"
+    
+    # Wait for registry to be ready
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl wait --for=condition=ready pod -l app=docker-registry -n registry --timeout=120s" || true
+    
+    log_success "Container registry deployed (Registry: port 5000/30500, UI: port 80/30501)"
+}
+
+################################################################################
+# Setup Nginx Ingress Controller
+################################################################################
+setup_ingress() {
+    local master_ip=$1
+    
+    log_info "Setting up nginx ingress controller..."
+    
+    # Deploy nginx ingress controller
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.11.1/deploy/static/provider/cloud/deploy.yaml"
+    
+    # Wait for ingress controller to be ready
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=120s" || true
+    
+    log_success "Nginx ingress controller deployed"
+}
+
+################################################################################
+# Setup Cert-Manager
+################################################################################
+setup_certmanager() {
+    local master_ip=$1
+    
+    log_info "Setting up cert-manager..."
+    
+    # Install cert-manager CRDs and controller
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.15.0/cert-manager.yaml"
+    
+    # Wait for cert-manager to be ready
+    sleep 30
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=cert-manager -n cert-manager --timeout=120s" || true
+    
+    # Create a self-signed ClusterIssuer for lab use
+    ssh_execute "$master_ip" "cat << 'EOF' | KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-issuer
+spec:
+  selfSigned: {}
+EOF"
+    
+    log_success "Cert-manager deployed with self-signed issuer"
+}
+
+################################################################################
+# Setup Monitoring (Prometheus + Grafana via kube-prometheus-stack)
+################################################################################
+setup_monitoring() {
+    local master_ip=$1
+    local use_loadbalancer=${2:-false}
+    
+    log_info "Setting up monitoring stack (this may take a few minutes)..."
+    
+    # Create namespace
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl create namespace monitoring || true"
+    
+    # Install kube-prometheus-stack (community Helm chart via kubectl)
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply --server-side -f https://raw.githubusercontent.com/prometheus-operator/kube-prometheus/main/manifests/setup/0namespace-namespace.yaml"
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply --server-side -f https://raw.githubusercontent.com/prometheus-operator/kube-prometheus/main/manifests/setup/"
+    sleep 10
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply --server-side -f https://raw.githubusercontent.com/prometheus-operator/kube-prometheus/main/manifests/"
+    
+    # Patch Grafana service to use LoadBalancer or NodePort
+    if [[ "$use_loadbalancer" == true ]]; then
+        ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl patch svc grafana -n monitoring -p '{\"spec\":{\"type\":\"LoadBalancer\"}}'"
+    else
+        ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl patch svc grafana -n monitoring -p '{\"spec\":{\"type\":\"NodePort\",\"ports\":[{\"nodePort\":30300,\"port\":3000,\"targetPort\":3000}]}}'"
+    fi
+    
+    log_success "Monitoring stack deployed (Grafana: port 3000/30300, default user: admin/admin)"
+}
+
+################################################################################
+# Setup MinIO (S3-compatible object storage)
+################################################################################
+setup_minio() {
+    local master_ip=$1
+    local use_loadbalancer=${2:-false}
+    
+    log_info "Setting up MinIO..."
+    
+    # Create namespace
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl create namespace minio || true"
+    
+    # Deploy MinIO
+    ssh_execute "$master_ip" "cat << 'EOF' | KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-data
+  namespace: minio
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: minio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      containers:
+      - name: minio
+        image: minio/minio:latest
+        args:
+        - server
+        - /data
+        - --console-address
+        - \":9001\"
+        env:
+        - name: MINIO_ROOT_USER
+          value: \"minioadmin\"
+        - name: MINIO_ROOT_PASSWORD
+          value: \"minioadmin\"
+        ports:
+        - containerPort: 9000
+          name: api
+        - containerPort: 9001
+          name: console
+        volumeMounts:
+        - name: data
+          mountPath: /data
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: minio-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio-api
+  namespace: minio
+spec:
+  type: $([ \"$use_loadbalancer\" = true ] && echo \"LoadBalancer\" || echo \"NodePort\")
+  ports:
+  - port: 9000
+    targetPort: 9000
+    $([ \"$use_loadbalancer\" = false ] && echo \"nodePort: 30900\" || echo \"\")
+  selector:
+    app: minio
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio-console
+  namespace: minio
+spec:
+  type: $([ \"$use_loadbalancer\" = true ] && echo \"LoadBalancer\" || echo \"NodePort\")
+  ports:
+  - port: 9001
+    targetPort: 9001
+    $([ \"$use_loadbalancer\" = false ] && echo \"nodePort: 30901\" || echo \"\")
+  selector:
+    app: minio
+EOF"
+    
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl wait --for=condition=ready pod -l app=minio -n minio --timeout=120s" || true
+    
+    log_success "MinIO deployed (API: 9000/30900, Console: 9001/30901, user: minioadmin/minioadmin)"
+}
+
+################################################################################
+# Setup Git Server (Gitea or GitLab)
+################################################################################
+setup_git() {
+    local master_ip=$1
+    local git_choice=$2
+    local use_loadbalancer=${3:-false}
+    
+    if [[ "$git_choice" == "gitea" ]]; then
+        setup_gitea "$master_ip" "$use_loadbalancer"
+    else
+        setup_gitlab "$master_ip" "$use_loadbalancer"
+    fi
+}
+
+setup_gitea() {
+    local master_ip=$1
+    local use_loadbalancer=${2:-false}
+    
+    log_info "Setting up Gitea..."
+    
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl create namespace gitea || true"
+    
+    ssh_execute "$master_ip" "cat << 'EOF' | KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gitea-data
+  namespace: gitea
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea
+  namespace: gitea
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gitea
+  template:
+    metadata:
+      labels:
+        app: gitea
+    spec:
+      containers:
+      - name: gitea
+        image: gitea/gitea:latest
+        ports:
+        - containerPort: 3000
+          name: web
+        - containerPort: 22
+          name: ssh
+        volumeMounts:
+        - name: data
+          mountPath: /data
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: gitea-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitea
+  namespace: gitea
+spec:
+  type: $([ \"$use_loadbalancer\" = true ] && echo \"LoadBalancer\" || echo \"NodePort\")
+  ports:
+  - port: 3000
+    targetPort: 3000
+    name: web
+    $([ \"$use_loadbalancer\" = false ] && echo \"nodePort: 30030\" || echo \"\")
+  - port: 22
+    targetPort: 22
+    name: ssh
+    $([ \"$use_loadbalancer\" = false ] && echo \"nodePort: 30022\" || echo \"\")
+  selector:
+    app: gitea
+EOF"
+    
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl wait --for=condition=ready pod -l app=gitea -n gitea --timeout=180s" || true
+    
+    log_success "Gitea deployed (Web: 3000/30030, SSH: 22/30022)"
+}
+
+setup_gitlab() {
+    local master_ip=$1
+    local use_loadbalancer=${2:-false}
+    
+    log_info "Setting up GitLab (this will take several minutes)..."
+    log_warning "GitLab requires significant resources (4GB+ RAM recommended)"
+    
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl create namespace gitlab || true"
+    
+    # Simplified GitLab deployment
+    ssh_execute "$master_ip" "cat << 'EOF' | KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gitlab-data
+  namespace: gitlab
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitlab
+  namespace: gitlab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gitlab
+  template:
+    metadata:
+      labels:
+        app: gitlab
+    spec:
+      containers:
+      - name: gitlab
+        image: gitlab/gitlab-ce:latest
+        ports:
+        - containerPort: 80
+          name: http
+        - containerPort: 22
+          name: ssh
+        env:
+        - name: GITLAB_OMNIBUS_CONFIG
+          value: |
+            external_url 'http://gitlab.local'
+            gitlab_rails['initial_root_password'] = 'Password123!'
+        volumeMounts:
+        - name: data
+          mountPath: /etc/gitlab
+          subPath: config
+        - name: data
+          mountPath: /var/log/gitlab
+          subPath: logs
+        - name: data
+          mountPath: /var/opt/gitlab
+          subPath: data
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: gitlab-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitlab
+  namespace: gitlab
+spec:
+  type: $([ \"$use_loadbalancer\" = true ] && echo \"LoadBalancer\" || echo \"NodePort\")
+  ports:
+  - port: 80
+    targetPort: 80
+    name: http
+    $([ \"$use_loadbalancer\" = false ] && echo \"nodePort: 30080\" || echo \"\")
+  - port: 22
+    targetPort: 22
+    name: ssh
+    $([ \"$use_loadbalancer\" = false ] && echo \"nodePort: 30222\" || echo \"\")
+  selector:
+    app: gitlab
+EOF"
+    
+    log_info "GitLab is starting (this can take 5-10 minutes)..."
+    log_success "GitLab deployed (Web: 80/30080, SSH: 22/30222, user: root, password: Password123!)"
+}
+
+################################################################################
+# Setup Longhorn Distributed Storage
+################################################################################
+setup_longhorn() {
+    local master_ip=$1
+    shift
+    local worker_ips=("$@")
+    
+    log_info "Setting up Longhorn distributed storage..."
+    
+    # Check for required dependencies (open-iscsi)
+    log_info "Installing Longhorn dependencies on all nodes..."
+    local all_ips=("$master_ip" "${worker_ips[@]}")
+    for node_ip in "${all_ips[@]}"; do
+        local os_family=$(detect_os_family "$node_ip")
+        if [[ "$os_family" == "debian" ]]; then
+            ssh_execute "$node_ip" "sudo apt-get update && sudo apt-get install -y open-iscsi nfs-common" || true
+        else
+            ssh_execute "$node_ip" "sudo dnf install -y iscsi-initiator-utils nfs-utils" || true
+            ssh_execute "$node_ip" "sudo systemctl enable --now iscsid" || true
+        fi
+    done
+    
+    # Deploy Longhorn
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f https://raw.githubusercontent.com/longhorn/longhorn/v1.7.0/deploy/longhorn.yaml"
+    
+    # Wait for Longhorn to be ready
+    log_info "Waiting for Longhorn components to be ready (this may take a few minutes)..."
+    sleep 60
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl wait --for=condition=ready pod -l app=longhorn-manager -n longhorn-system --timeout=300s" || true
+    
+    # Expose Longhorn UI
+    ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl patch svc longhorn-frontend -n longhorn-system -p '{\"spec\":{\"type\":\"NodePort\",\"ports\":[{\"nodePort\":30800,\"port\":80,\"targetPort\":8000}]}}'" || true
+    
+    log_success "Longhorn deployed (UI: port 80/30800)"
+}
