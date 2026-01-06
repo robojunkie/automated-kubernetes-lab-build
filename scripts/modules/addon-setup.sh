@@ -191,8 +191,9 @@ setup_metallb() {
         sleep 3
     done" 2>/dev/null || true
     
-    # Final wait for cert and webhook startup
-    sleep 10
+    # Wait for service networking to fully settle and webhook to be reachable via service IP
+    log_debug "Waiting for webhook service to be reachable..."
+    sleep 30
     
     log_debug "Configuring MetalLB IP pool: ${pool_addresses}"
     local attempt=1
