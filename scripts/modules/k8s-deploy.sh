@@ -182,8 +182,11 @@ ensure_container_runtime_ready_debian() {
     # Remove old docker.list if exists
     ssh_execute "$node_ip" "sudo rm -f /etc/apt/sources.list.d/docker.list"
     
-    # Add Docker repository with the captured codename
-    ssh_execute "$node_ip" "echo 'deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $ubuntu_codename stable' | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null"
+    # Build Docker repository line locally with the captured codename
+    local docker_repo_line="deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${ubuntu_codename} stable"
+    
+    # Write the repository configuration (variable expands here before being sent)
+    ssh_execute "$node_ip" "echo \"${docker_repo_line}\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null"
     
     ssh_execute "$node_ip" "sudo apt-get update -o Acquire::ForceIPv4=true"
     
