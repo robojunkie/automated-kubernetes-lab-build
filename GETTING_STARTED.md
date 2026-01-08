@@ -6,27 +6,30 @@ This guide will help you build a complete Kubernetes lab environment from scratc
 
 ## What You're Building
 
-This automation creates a **production-grade Kubernetes cluster** with optional infrastructure components, perfect for:
-- Learning Kubernetes
-- Testing applications
-- CI/CD experimentation
-- Home lab projects
+This automation creates a **production-grade Kubernetes cluster** in two phases:
 
-### Core Components (Always Included)
+### Phase 1: Base Cluster (Automated)
 - ✅ **Kubernetes 1.28** cluster (1 master + N workers)
-- ✅ **Calico CNI** - Pod networking
+- ✅ **Calico CNI** - Pod networking (OS-optimized)
 - ✅ **MetalLB** - LoadBalancer IPs (optional)
-- ✅ **Local storage** - Persistent volumes
+- ✅ **Local-path storage** - Persistent volumes
+- ✅ **Portainer** - Web UI for cluster management (optional)
 
-### Optional Lab Infrastructure
+⏱️ **Time**: ~10 minutes for base cluster
+
+### Phase 2: Additional Infrastructure (Your Choice)
+Deploy after base cluster via **Portainer UI** (visual) or **CLI scripts** (automated):
 - 📦 **Container Registry** - Store your own images
 - 🌐 **Ingress Controller** - Access services by hostname
 - 🔒 **Cert-Manager** - Automatic TLS certificates
 - 📊 **Monitoring Stack** - Prometheus + Grafana
 - 🗄️ **MinIO** - S3-compatible object storage
-- 🔧 **Portainer** - Web UI for cluster management
-- 📝 **Git Server** - Gitea or GitLab
-- 💾 **Longhorn** - Distributed storage
+- 📝 **Git Server** - Gitea (lightweight) or GitLab (full-featured)
+- 💾 **Longhorn** - Distributed storage with replication
+
+⏱️ **Time**: ~5-10 minutes per component
+
+**Perfect for**: Learning Kubernetes, testing applications, CI/CD experimentation, home labs
 
 ## Prerequisites
 
@@ -92,7 +95,7 @@ The script will prompt you for:
 6. **MetalLB IP pool** - if public access enabled (e.g., 192.168.1.220-192.168.1.250)
 7. **CNI plugin** - calico (recommended), flannel, or weave
 8. **SSH key path** - if not using default ~/.ssh/id_rsa
-9. **Optional components** - choose what you want to install
+9. **Install Portainer?** - yes (recommended) or no
 
 ### Step 4: Wait for Deployment
 
@@ -100,10 +103,11 @@ The script will:
 - ⏱️ Install container runtime (5-10 min)
 - ⏱️ Initialize Kubernetes master (2-5 min)
 - ⏱️ Join worker nodes (2-3 min per node)
-- ⏱️ Deploy CNI and addons (3-5 min)
-- ⏱️ Deploy optional components (varies)
+- ⏱️ Deploy CNI networking (1-2 min)
+- ⏱️ Deploy MetalLB (if enabled, 2-3 min)
+- ⏱️ Deploy Portainer (if enabled, 2-3 min)
 
-**Total time**: 15-30 minutes depending on components chosen.
+**Total time**: ~10-15 minutes for base cluster.
 
 ### Step 5: Access Your Cluster
 
@@ -119,6 +123,52 @@ export KUBECONFIG=./my-lab-kubeconfig.yaml
 kubectl get nodes
 kubectl get pods -A
 ```
+
+### Step 6: Deploy Additional Components (Optional)
+
+**Two ways to add more infrastructure**:
+
+#### Option A: Portainer UI (Visual, Beginner-Friendly) 🖱️
+
+1. Access Portainer: `http://<master-ip>:30777`
+2. Follow the **[Portainer Deployments Guide](docs/PORTAINER_DEPLOYMENTS.md)**
+3. Click through Helm charts to deploy:
+   - Nginx Ingress
+   - Cert-Manager
+   - Monitoring Stack
+   - MinIO, Longhorn, Gitea, etc.
+4. Watch deployment progress in real-time
+
+**Recommended starting point!**
+
+#### Option B: CLI Scripts (Automated) 🖥️
+
+Use the modular deployment scripts:
+
+```bash
+# Deploy ingress controller
+./container-scripts/networking/deploy-ingress.sh <master-ip>
+
+# Deploy monitoring (Prometheus + Grafana)
+./container-scripts/monitoring/deploy-monitoring.sh <master-ip>
+
+# Deploy container registry
+./container-scripts/devtools/deploy-registry.sh <master-ip>
+
+# Deploy Longhorn storage
+./container-scripts/storage/deploy-longhorn.sh <master-ip>
+
+# Deploy MinIO object storage
+./container-scripts/storage/deploy-minio.sh <master-ip>
+
+# Deploy Gitea git server
+./container-scripts/devtools/deploy-gitea.sh <master-ip>
+
+# Deploy cert-manager
+./container-scripts/networking/deploy-cert-manager.sh <master-ip>
+```
+
+See **[container-scripts/README.md](container-scripts/README.md)** for full documentation.
 
 ## What's Next?
 

@@ -21,12 +21,13 @@ What started as a script to automate Kubernetes deployment on Ubuntu evolved int
 - ❌ Each rebuild takes 2-4 hours of manual work
 
 **After this project:**
-- ✅ One command to deploy entire cluster (15-30 minutes)
+- ✅ One command to deploy base cluster (~10 minutes)
 - ✅ Works identically on Ubuntu and Rocky Linux
 - ✅ Automatic firewall configuration
-- ✅ Optional components (registry, monitoring, git, storage) via simple prompts
+- ✅ Deploy additional components via Portainer UI or CLI scripts
 - ✅ Production-grade setup using kubeadm (not k3s or minikube)
 - ✅ Comprehensive documentation for beginners
+- ✅ Modular architecture - deploy only what you need
 
 ### Why "Nuclear Option"?
 
@@ -39,15 +40,30 @@ The name comes from the original request - a way to completely **nuke and rebuil
 
 ## 🏗️ What We Built
 
-### Core Infrastructure
+### Phase 1: Base Cluster (Automated)
 - **Kubernetes 1.28** cluster using kubeadm
 - **Multi-OS Support**: Ubuntu 24.04 and Rocky Linux 9.6 (fully tested)
 - **Calico CNI** with OS-optimized configuration
 - **MetalLB** for real LoadBalancer IPs on bare metal
 - **Local-path storage** for persistent volumes
+- **Portainer** - Web UI for cluster management (optional)
 
-### Optional Lab Infrastructure (Choose What You Need)
-- 🎯 **Portainer** - Web UI for cluster management
+⏱️ Deployment time: ~10 minutes
+
+### Phase 2: Additional Infrastructure (Your Choice)
+Deploy after base cluster using **two methods**:
+
+**🖱️ Portainer UI** (Visual, Beginner-Friendly):
+- Point-and-click deployment through web interface
+- See deployment progress in real-time
+- Manage everything from one dashboard
+
+**🖥️ CLI Scripts** (Automated, Repeatable):
+- Individual deployment scripts for each component
+- Perfect for automation and scripting
+- Flexible configuration options
+
+**Available Components**:
 - 📦 **Container Registry** - Private Docker registry with web UI
 - 🌐 **Nginx Ingress** - Hostname-based routing (app1.lab.local, app2.lab.local)
 - 🔒 **Cert-Manager** - Automatic TLS certificates
@@ -56,9 +72,12 @@ The name comes from the original request - a way to completely **nuke and rebuil
 - 📝 **Git Server** - Gitea (lightweight) or GitLab (full-featured)
 - 💾 **Longhorn** - Distributed storage with replication and snapshots
 
+⏱️ Each component: ~5-10 minutes
+
 ## 📚 Wiki Navigation
 
 ### Getting Started
+- **[Deployment Methods](Deployment-Methods)** - Two-phase deployment: Portainer UI vs CLI Scripts (⭐ Start Here!)
 - **[Installation Guide](Installation-Guide)** - Step-by-step setup from scratch
 - **[Quick Start](Quick-Start)** - Deploy your first cluster in 5 minutes
 - **[Architecture Overview](Architecture)** - How all the pieces fit together
@@ -67,6 +86,11 @@ The name comes from the original request - a way to completely **nuke and rebuil
 - **[Kubernetes Setup](Kubernetes-Setup)** - How we deploy and configure K8s
 - **[Networking](Networking)** - CNI, MetalLB, and Ingress deep dive
 - **[Storage Options](Storage)** - Local-path vs Longhorn comparison
+
+### Deployment Guides
+- **[Deployment Methods](Deployment-Methods)** - Portainer UI vs CLI Scripts comparison
+- **[Portainer Deployments](../docs/PORTAINER_DEPLOYMENTS.md)** - Visual deployment guide
+- **[CLI Scripts](../container-scripts/README.md)** - Automated deployment scripts
 
 ### Optional Components
 - **[Portainer Guide](Portainer)** - Visual cluster management
@@ -90,10 +114,11 @@ The name comes from the original request - a way to completely **nuke and rebuil
 ## 🚀 Quick Links
 
 ### For New Users
-1. Start with [Installation Guide](Installation-Guide)
-2. Follow the [Quick Start](Quick-Start)
-3. Learn about [Portainer](Portainer) for visual management
-4. Explore [Architecture Overview](Architecture) to understand the system
+1. Start with **[Deployment Methods](Deployment-Methods)** - understand two-phase approach
+2. Follow the [Installation Guide](Installation-Guide) - deploy base cluster
+3. Choose your path: [Portainer UI](../docs/PORTAINER_DEPLOYMENTS.md) or [CLI Scripts](../container-scripts/README.md)
+4. Learn about [Portainer](Portainer) for visual management
+5. Explore [Architecture Overview](Architecture) to understand the system
 
 ### For Developers
 1. Read [Architecture Overview](Architecture)

@@ -13,14 +13,15 @@ This project automates the entire process of setting up a **complete Kubernetes 
 
 ### What You Get
 
-**Core Cluster** (Always Installed):
+**Phase 1: Base Cluster** (Automated via `build-lab.sh`):
 - ✅ Kubernetes 1.28 cluster (kubeadm)
 - ✅ Calico CNI networking (OS-optimized)
-- ✅ MetalLB load balancer (optional)
+- ✅ MetalLB load balancer (with customizable IP pool)
 - ✅ Local-path storage provisioner
+- ✅ **Portainer** - Web UI for visual cluster management
 
-**Optional Infrastructure** (Choose During Setup):
-- 🎯 **Portainer** - Web UI for visual cluster management
+**Phase 2: Additional Infrastructure** (Deploy After Base Setup):
+Deploy via **Portainer UI** (visual) or **CLI scripts** (automated):
 - 📦 **Container Registry** - Private Docker registry with web UI
 - 🌐 **Nginx Ingress** - Hostname-based routing
 - 🔒 **Cert-Manager** - Automatic TLS certificates
@@ -29,21 +30,27 @@ This project automates the entire process of setting up a **complete Kubernetes 
 - 📝 **Git Server** - Gitea (lightweight) or GitLab (full-featured)
 - 💾 **Longhorn** - Distributed storage with replication
 
+**Two Ways to Deploy Additional Components**:
+1. 🖱️ **Portainer Dashboard** - Point-and-click deployment (see [Portainer Guide](docs/PORTAINER_DEPLOYMENTS.md))
+2. 🖥️ **CLI Scripts** - Automated deployment scripts (see [container-scripts/](container-scripts/README.md))
+
 **Result**: A production-like Kubernetes environment running on your own hardware!
 
 ### Key Features
 
-- **🚀 Zero-to-Cluster in 15 Minutes**: Fully automated deployment of production-grade Kubernetes
+- **🚀 Zero-to-Cluster in 10 Minutes**: Fully automated base cluster deployment
 - **🖥️ Multi-OS Support**: Ubuntu 24.04 and Rocky Linux 9.6 fully tested and working
 - **🔧 Lab-Agnostic**: Works with Proxmox, VMware, VirtualBox, bare metal, or any VM platform
-- **📦 Complete Infrastructure Stack**: Optional components for a full-featured lab environment:
-  - Container Registry (Docker Registry + Web UI)
-  - Ingress Controller (Nginx)
-  - TLS Certificates (Cert-Manager)
-  - Monitoring (Prometheus + Grafana)
-  - Object Storage (MinIO S3-compatible)
-  - Git Server (Gitea or GitLab)
-  - Distributed Storage (Longhorn)
+- **🎯 Two-Phase Deployment**:
+  - **Phase 1**: Automated base cluster (Kubernetes + Calico + MetalLB + Portainer)
+  - **Phase 2**: Deploy additional components via Portainer UI or CLI scripts
+- **📦 Modular Infrastructure**: Add components as needed:
+  - Container Registry, Ingress, TLS, Monitoring, Storage, Git, Object Storage
+  - Deploy via Portainer dashboard (visual) or CLI scripts (automated)
+- **🔒 Backup & Restore**: Preserve your work when rebuilding clusters
+  - Automatic backup during rebuild process
+  - Restore Portainer and applications after rebuild
+  - No data loss - rebuild with confidence!
 - **🌐 Real LoadBalancer IPs**: MetalLB provides actual IPs from your network (not just NodePort)
 - **🎯 Production-Grade**: Uses `kubeadm` for real-world Kubernetes setup matching production environments
 - **📚 Comprehensive Documentation**: Beginner-friendly guides assuming no prior Kubernetes knowledge
@@ -59,7 +66,12 @@ Start here: **[Getting Started Guide](GETTING_STARTED.md)** - Complete beginner-
 ### 📖 Component Reference
 **[Components Guide](COMPONENTS.md)** - Detailed reference for all 15+ components with usage examples
 
-### 🎯 Component Quick Start Guides
+### 🎯 Deployment Guides
+**Two ways to deploy additional components**:
+- **[Portainer Deployments](docs/PORTAINER_DEPLOYMENTS.md)** - Visual deployment guide for all components (recommended!)
+- **[CLI Scripts](container-scripts/README.md)** - Automated deployment scripts for each component
+
+### 📝 Component Quick Start Guides
 Master individual components:
 - [Portainer](docs/quickstart/PORTAINER.md) - Visual cluster management (start here!)
 - [Container Registry](docs/quickstart/REGISTRY.md) - Store and manage your images
@@ -72,6 +84,7 @@ Master individual components:
 ### 🏗️ Architecture & Troubleshooting
 - [Architecture Overview](docs/ARCHITECTURE.md) - How all components connect
 - [Networking Details](docs/NETWORKING.md) - Deep dive into CNI, MetalLB, and ingress
+- [Backup & Restore](docs/BACKUP_RESTORE.md) - Preserve your work when rebuilding clusters
 - [Troubleshooting Guide](docs/TROUBLESHOOTING.md) - Common issues and solutions
 
 ## Quick Start
