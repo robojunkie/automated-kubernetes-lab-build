@@ -177,16 +177,22 @@ ensure_container_runtime_ready_debian() {
     local ubuntu_codename
     ubuntu_codename=$(ssh_execute "$node_ip" "lsb_release -cs" | tr -d '[:space:]')
     
-    log_info "Detected Ubuntu codename: $ubuntu_codename"
+    log_info "Detected Ubuntu codename: '$ubuntu_codename'"
+    
+    # Validate we got a codename
+    if [[ -z "$ubuntu_codename" ]]; then
+        log_error "Failed to detect Ubuntu codename"
+        return 1
+    fi
     
     # Remove old docker.list if exists
     ssh_execute "$node_ip" "sudo rm -f /etc/apt/sources.list.d/docker.list"
     
-    # Build Docker repository line locally with the captured codename
-    local docker_repo_line="deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${ubuntu_codename} stable"
-    
-    # Write the repository configuration (variable expands here before being sent)
-    ssh_execute "$node_ip" "echo \"${docker_repo_line}\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null"
+    # Write Docker repository configuration directly using cat with heredoc
+    # This avoids all variable expansion issues
+    ssh_execute "$node_ip" "cat <<EOF | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $ubuntu_codename stable
+EOF"
     
     ssh_execute "$node_ip" "sudo apt-get update -o Acquire::ForceIPv4=true"
     
