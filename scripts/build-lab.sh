@@ -47,14 +47,6 @@ DRY_RUN=false
 
 # Optional infrastructure components
 INSTALL_PORTAINER=false
-INSTALL_REGISTRY=false
-INSTALL_INGRESS=false
-INSTALL_CERTMANAGER=false
-INSTALL_MONITORING=false
-INSTALL_MINIO=false
-INSTALL_GIT=false
-GIT_CHOICE="gitea"  # gitea or gitlab
-INSTALL_LONGHORN=false
 
 ################################################################################
 # Display Banner
@@ -259,66 +251,14 @@ collect_user_input() {
     CNI_PLUGIN="${CNI_PLUGIN:-calico}"
     validate_cni_plugin "$CNI_PLUGIN"
     
-        # Optional infrastructure components
+        # Optional: Portainer dashboard
     log_info ""
-    log_info "Optional Lab Infrastructure:"
-    
-    # Portainer (dashboard)
-    read -r -p "Install Portainer dashboard? (yes/no) [default: yes]: " PORTAINER_INPUT
+    read -r -p "Install Portainer dashboard for cluster management? (yes/no) [default: yes]: " PORTAINER_INPUT
     PORTAINER_INPUT="${PORTAINER_INPUT:-yes}"
     if [[ "$PORTAINER_INPUT" =~ ^(yes|y|true)$ ]]; then
         INSTALL_PORTAINER=true
-    fi
-    
-    # Container Registry
-    read -r -p "Install container registry (Docker Registry + UI)? (yes/no) [default: yes]: " REGISTRY_INPUT
-    REGISTRY_INPUT="${REGISTRY_INPUT:-yes}"
-    if [[ "$REGISTRY_INPUT" =~ ^(yes|y|true)$ ]]; then
-        INSTALL_REGISTRY=true
-    fi
-    
-    # Ingress Controller
-    read -r -p "Install nginx ingress controller? (yes/no) [default: yes]: " INGRESS_INPUT
-    INGRESS_INPUT="${INGRESS_INPUT:-yes}"
-    if [[ "$INGRESS_INPUT" =~ ^(yes|y|true)$ ]]; then
-        INSTALL_INGRESS=true
-    fi
-    
-    # Cert-manager
-    read -r -p "Install cert-manager (TLS certificates)? (yes/no) [default: no]: " CERTMGR_INPUT
-    CERTMGR_INPUT="${CERTMGR_INPUT:-no}"
-    if [[ "$CERTMGR_INPUT" =~ ^(yes|y|true)$ ]]; then
-        INSTALL_CERTMANAGER=true
-    fi
-    
-    # Monitoring (Prometheus + Grafana)
-    read -r -p "Install monitoring (Prometheus + Grafana)? (yes/no) [default: no]: " MONITORING_INPUT
-    MONITORING_INPUT="${MONITORING_INPUT:-no}"
-    if [[ "$MONITORING_INPUT" =~ ^(yes|y|true)$ ]]; then
-        INSTALL_MONITORING=true
-    fi
-    
-    # MinIO (S3-compatible storage)
-    read -r -p "Install MinIO (S3-compatible object storage)? (yes/no) [default: no]: " MINIO_INPUT
-    MINIO_INPUT="${MINIO_INPUT:-no}"
-    if [[ "$MINIO_INPUT" =~ ^(yes|y|true)$ ]]; then
-        INSTALL_MINIO=true
-    fi
-    
-    # Git Server
-    read -r -p "Install Git server? (yes/no) [default: no]: " GIT_INPUT
-    GIT_INPUT="${GIT_INPUT:-no}"
-    if [[ "$GIT_INPUT" =~ ^(yes|y|true)$ ]]; then
-        INSTALL_GIT=true
-        read -r -p "Choose Git server (gitea/gitlab) [default: gitea]: " GIT_CHOICE
-        GIT_CHOICE="${GIT_CHOICE:-gitea}"
-    fi
-    
-    # Longhorn (distributed storage)
-    read -r -p "Install Longhorn distributed storage? (yes/no) [default: no]: " LONGHORN_INPUT
-    LONGHORN_INPUT="${LONGHORN_INPUT:-no}"
-    if [[ "$LONGHORN_INPUT" =~ ^(yes|y|true)$ ]]; then
-        INSTALL_LONGHORN=true
+        log_info "Portainer will be installed. Deploy additional components from Portainer after setup."
+        log_info "See container-scripts/ folder for alternative CLI deployment scripts."
     fi
 }
 
@@ -416,48 +356,6 @@ execute_deployment() {
         log_info "Skipping Portainer deployment (per user choice)"
     fi
 
-    # Optional: Deploy container registry
-    if [[ "$INSTALL_REGISTRY" == true ]]; then
-        log_info "Deploying container registry..."
-        setup_registry "$MASTER_IP" "${PUBLIC_CONTAINERS:-false}"
-    fi
-
-    # Optional: Deploy nginx ingress controller
-    if [[ "$INSTALL_INGRESS" == true ]]; then
-        log_info "Deploying nginx ingress controller..."
-        setup_ingress "$MASTER_IP"
-    fi
-
-    # Optional: Deploy cert-manager
-    if [[ "$INSTALL_CERTMANAGER" == true ]]; then
-        log_info "Deploying cert-manager..."
-        setup_certmanager "$MASTER_IP"
-    fi
-
-    # Optional: Deploy monitoring (Prometheus + Grafana)
-    if [[ "$INSTALL_MONITORING" == true ]]; then
-        log_info "Deploying monitoring stack..."
-        setup_monitoring "$MASTER_IP" "${PUBLIC_CONTAINERS:-false}"
-    fi
-
-    # Optional: Deploy MinIO
-    if [[ "$INSTALL_MINIO" == true ]]; then
-        log_info "Deploying MinIO..."
-        setup_minio "$MASTER_IP" "${PUBLIC_CONTAINERS:-false}"
-    fi
-
-    # Optional: Deploy Git server
-    if [[ "$INSTALL_GIT" == true ]]; then
-        log_info "Deploying Git server ($GIT_CHOICE)..."
-        setup_git "$MASTER_IP" "$GIT_CHOICE" "${PUBLIC_CONTAINERS:-false}"
-    fi
-
-    # Optional: Deploy Longhorn (must be before apps that need distributed storage)
-    if [[ "$INSTALL_LONGHORN" == true ]]; then
-        log_info "Deploying Longhorn distributed storage..."
-        setup_longhorn "$MASTER_IP" "${WORKER_IPS[@]}"
-    fi
-
     log_success "Kubernetes cluster deployment completed successfully!"
 }
 
@@ -482,6 +380,49 @@ post_deployment_config() {
         
         chmod 600 "$KUBECONFIG_PATH"
         log_success "Kubeconfig saved to: $KUBECONFIG_PATH"
+    fi
+    
+    # Check if there's a backup to restore
+    if [ -f "${PROJECT_ROOT}/.last-backup-dir" ]; then
+        BACKUP_DIR=$(cat "${PROJECT_ROOT}/.last-backup-dir")
+        
+        if [ -d "$BACKUP_DIR" ]; then
+            log_info ""
+            log_warning "=========================================="
+            log_warning "BACKUP DETECTED!"
+            log_warning "=========================================="
+            log_warning "A backup from your previous cluster was found:"
+            log_warning "  $BACKUP_DIR"
+            echo ""
+            log_info "Would you like to restore your previous data now?"
+            log_info "This will restore Portainer and any backed up applications."
+            echo ""
+            read -r -p "Restore backup? (yes/no): " restore_choice
+            
+            if [ "$restore_choice" = "yes" ]; then
+                log_info "Starting restore process..."
+                echo ""
+                
+                # Export kubeconfig for restore script
+                export KUBECONFIG="$KUBECONFIG_PATH"
+                
+                if [ -f "${SCRIPT_DIR}/restore-cluster.sh" ]; then
+                    bash "${SCRIPT_DIR}/restore-cluster.sh" --backup-dir "$BACKUP_DIR" --all-namespaces
+                    
+                    if [ $? -eq 0 ]; then
+                        log_success "Restore completed successfully!"
+                        rm -f "${PROJECT_ROOT}/.last-backup-dir"
+                    else
+                        log_error "Restore failed. Backup is still available at: $BACKUP_DIR"
+                    fi
+                else
+                    log_error "Restore script not found: ${SCRIPT_DIR}/restore-cluster.sh"
+                fi
+            else
+                log_info "Skipping restore. You can restore later with:"
+                log_info "  ./scripts/restore-cluster.sh --backup-dir $BACKUP_DIR"
+            fi
+        fi
     fi
     
     # Display cluster info
@@ -514,6 +455,95 @@ cleanup() {
 }
 
 ################################################################################
+# Check for Existing Cluster
+################################################################################
+check_existing_cluster() {
+    log_info "Checking for existing Kubernetes cluster..."
+    
+    # Check if kubectl is available and configured
+    if command -v kubectl &> /dev/null; then
+        if kubectl cluster-info &> /dev/null 2>&1; then
+            log_warning ""
+            log_warning "=========================================="
+            log_warning "EXISTING CLUSTER DETECTED!"
+            log_warning "=========================================="
+            log_warning "A Kubernetes cluster is currently accessible."
+            log_warning ""
+            
+            # Show cluster info
+            kubectl get nodes 2>/dev/null || true
+            echo ""
+            
+            log_warning "You have the following options:"
+            echo ""
+            echo "  1. NUCLEAR OPTION - Fresh install (destroys everything)"
+            echo "  2. PRESERVE & REBUILD - Backup data, rebuild cluster, restore data"
+            echo "  3. CANCEL - Exit without making changes"
+            echo ""
+            
+            read -r -p "Choose option [1/2/3]: " choice
+            
+            case $choice in
+                1)
+                    log_warning "Nuclear option selected - ALL DATA WILL BE LOST!"
+                    read -r -p "Are you absolutely sure? Type 'YES' to confirm: " confirm
+                    if [ "$confirm" != "YES" ]; then
+                        log_info "Cancelled by user"
+                        exit 0
+                    fi
+                    log_info "Proceeding with fresh installation..."
+                    return 0
+                    ;;
+                2)
+                    log_info "Preserve & Rebuild selected"
+                    log_info ""
+                    log_info "Step 1: Backing up current cluster..."
+                    
+                    # Run backup script
+                    BACKUP_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+                    BACKUP_DIR="${PROJECT_ROOT}/cluster-backup-${BACKUP_TIMESTAMP}"
+                    
+                    if [ -f "${SCRIPT_DIR}/backup-cluster.sh" ]; then
+                        bash "${SCRIPT_DIR}/backup-cluster.sh" --backup-dir "$BACKUP_DIR" --all-namespaces
+                        
+                        if [ $? -eq 0 ]; then
+                            log_success "Backup completed successfully!"
+                            log_info "Backup location: $BACKUP_DIR"
+                            echo ""
+                            
+                            # Save backup location for post-deployment restore
+                            echo "$BACKUP_DIR" > "${PROJECT_ROOT}/.last-backup-dir"
+                            
+                            log_info "After cluster rebuild, run:"
+                            log_info "  ./scripts/restore-cluster.sh --backup-dir $BACKUP_DIR"
+                            echo ""
+                            read -r -p "Press Enter to continue with cluster rebuild..."
+                        else
+                            log_error "Backup failed! Aborting."
+                            exit 1
+                        fi
+                    else
+                        log_error "Backup script not found: ${SCRIPT_DIR}/backup-cluster.sh"
+                        log_error "Cannot proceed with preserve option."
+                        exit 1
+                    fi
+                    ;;
+                3)
+                    log_info "Cancelled by user"
+                    exit 0
+                    ;;
+                *)
+                    log_error "Invalid choice"
+                    exit 1
+                    ;;
+            esac
+        fi
+    fi
+    
+    log_info "No existing cluster detected or cluster not accessible."
+}
+
+################################################################################
 # Main Execution
 ################################################################################
 main() {
@@ -528,6 +558,9 @@ main() {
     
     # Parse command line arguments
     parse_arguments "$@"
+    
+    # Check for existing cluster (offer backup option)
+    check_existing_cluster
     
     # Collect user input (if not using config file)
     if [[ -z "$MASTER_NODE" ]]; then
