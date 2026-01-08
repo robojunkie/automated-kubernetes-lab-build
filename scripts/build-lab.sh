@@ -455,92 +455,103 @@ cleanup() {
 }
 
 ################################################################################
-# Check for Existing Cluster
+# Check for Existing Cluster on Target Master Node
 ################################################################################
 check_existing_cluster() {
-    log_info "Checking for existing Kubernetes cluster..."
+    local master_ip=$1
     
-    # Check if kubectl is available and configured
-    if command -v kubectl &> /dev/null; then
-        if kubectl cluster-info &> /dev/null 2>&1; then
-            log_warning ""
-            log_warning "=========================================="
-            log_warning "EXISTING CLUSTER DETECTED!"
-            log_warning "=========================================="
-            log_warning "A Kubernetes cluster is currently accessible."
-            log_warning ""
-            
-            # Show cluster info
-            kubectl get nodes 2>/dev/null || true
-            echo ""
-            
-            log_warning "You have the following options:"
-            echo ""
-            echo "  1. NUCLEAR OPTION - Fresh install (destroys everything)"
-            echo "  2. PRESERVE & REBUILD - Backup data, rebuild cluster, restore data"
-            echo "  3. CANCEL - Exit without making changes"
-            echo ""
-            
-            read -r -p "Choose option [1/2/3]: " choice
-            
-            case $choice in
-                1)
-                    log_warning "Nuclear option selected - ALL DATA WILL BE LOST!"
-                    read -r -p "Are you absolutely sure? Type 'YES' to confirm: " confirm
-                    if [ "$confirm" != "YES" ]; then
-                        log_info "Cancelled by user"
-                        exit 0
-                    fi
-                    log_info "Proceeding with fresh installation..."
-                    return 0
-                    ;;
-                2)
-                    log_info "Preserve & Rebuild selected"
-                    log_info ""
-                    log_info "Step 1: Backing up current cluster..."
-                    
-                    # Run backup script
-                    BACKUP_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-                    BACKUP_DIR="${PROJECT_ROOT}/cluster-backup-${BACKUP_TIMESTAMP}"
-                    
-                    if [ -f "${SCRIPT_DIR}/backup-cluster.sh" ]; then
-                        bash "${SCRIPT_DIR}/backup-cluster.sh" --backup-dir "$BACKUP_DIR" --all-namespaces
-                        
-                        if [ $? -eq 0 ]; then
-                            log_success "Backup completed successfully!"
-                            log_info "Backup location: $BACKUP_DIR"
-                            echo ""
-                            
-                            # Save backup location for post-deployment restore
-                            echo "$BACKUP_DIR" > "${PROJECT_ROOT}/.last-backup-dir"
-                            
-                            log_info "After cluster rebuild, run:"
-                            log_info "  ./scripts/restore-cluster.sh --backup-dir $BACKUP_DIR"
-                            echo ""
-                            read -r -p "Press Enter to continue with cluster rebuild..."
-                        else
-                            log_error "Backup failed! Aborting."
-                            exit 1
-                        fi
-                    else
-                        log_error "Backup script not found: ${SCRIPT_DIR}/backup-cluster.sh"
-                        log_error "Cannot proceed with preserve option."
-                        exit 1
-                    fi
-                    ;;
-                3)
+    log_info "Checking for existing Kubernetes cluster on $master_ip..."
+    
+    # Check if kubectl is running on the master node
+    if ssh_execute "$master_ip" "command -v kubectl &>/dev/null && kubectl cluster-info &>/dev/null 2>&1"; then
+        log_warning ""
+        log_warning "=========================================="
+        log_warning "EXISTING CLUSTER DETECTED!"
+        log_warning "=========================================="
+        log_warning "A Kubernetes cluster is running on $master_ip"
+        log_warning ""
+        
+        # Show cluster info from the master node
+        log_info "Current cluster nodes:"
+        ssh_execute "$master_ip" "kubectl get nodes 2>/dev/null" || true
+        echo ""
+        
+        log_warning "You have the following options:"
+        echo ""
+        echo "  1. NUCLEAR OPTION - Fresh install (destroys everything)"
+        echo "  2. PRESERVE & REBUILD - Backup data, rebuild cluster, restore data"
+        echo "  3. CANCEL - Exit without making changes"
+        echo ""
+        
+        read -r -p "Choose option [1/2/3]: " choice
+        
+        case $choice in
+            1)
+                log_warning "Nuclear option selected - ALL DATA WILL BE LOST!"
+                read -r -p "Are you absolutely sure? Type 'YES' to confirm: " confirm
+                if [ "$confirm" != "YES" ]; then
                     log_info "Cancelled by user"
                     exit 0
-                    ;;
-                *)
-                    log_error "Invalid choice"
+                fi
+                log_info "Proceeding with fresh installation..."
+                return 0
+                ;;
+            2)
+                log_info "Preserve & Rebuild selected"
+                log_info ""
+                log_info "Step 1: Backing up current cluster on $master_ip..."
+                
+                # Run backup script with kubeconfig from master node
+                BACKUP_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+                BACKUP_DIR="${PROJECT_ROOT}/cluster-backup-${BACKUP_TIMESTAMP}"
+                mkdir -p "$BACKUP_DIR"
+                
+                # Get kubeconfig from master
+                log_info "Retrieving kubeconfig from master node..."
+                ssh_execute "$master_ip" "cat ~/.kube/config" > "$BACKUP_DIR/temp-kubeconfig.yaml"
+                
+                # Replace server address with master IP for remote access
+                sed -i "s|server: https://.*:6443|server: https://${master_ip}:6443|g" "$BACKUP_DIR/temp-kubeconfig.yaml"
+                
+                if [ -f "${SCRIPT_DIR}/backup-cluster.sh" ]; then
+                    # Run backup using the retrieved kubeconfig
+                    KUBECONFIG="$BACKUP_DIR/temp-kubeconfig.yaml" bash "${SCRIPT_DIR}/backup-cluster.sh" \
+                        --backup-dir "$BACKUP_DIR" --all-namespaces
+                    
+                    if [ $? -eq 0 ]; then
+                        log_success "Backup completed successfully!"
+                        log_info "Backup location: $BACKUP_DIR"
+                        echo ""
+                        
+                        # Save backup location for post-deployment restore
+                        echo "$BACKUP_DIR" > "${PROJECT_ROOT}/.last-backup-dir"
+                        
+                        log_info "After cluster rebuild, you can restore with:"
+                        log_info "  ./scripts/restore-cluster.sh --backup-dir $BACKUP_DIR"
+                        echo ""
+                        read -r -p "Press Enter to continue with cluster rebuild..."
+                    else
+                        log_error "Backup failed! Aborting."
+                        exit 1
+                    fi
+                else
+                    log_error "Backup script not found: ${SCRIPT_DIR}/backup-cluster.sh"
+                    log_error "Cannot proceed with preserve option."
                     exit 1
-                    ;;
-            esac
-        fi
+                fi
+                ;;
+            3)
+                log_info "Cancelled by user"
+                exit 0
+                ;;
+            *)
+                log_error "Invalid choice"
+                exit 1
+                ;;
+        esac
+    else
+        log_info "No existing cluster detected on $master_ip"
     fi
-    
-    log_info "No existing cluster detected or cluster not accessible."
 }
 
 ################################################################################
@@ -559,13 +570,13 @@ main() {
     # Parse command line arguments
     parse_arguments "$@"
     
-    # Check for existing cluster (offer backup option)
-    check_existing_cluster
-    
     # Collect user input (if not using config file)
     if [[ -z "$MASTER_NODE" ]]; then
         collect_user_input
     fi
+    
+    # NOW check for existing cluster on the target master node
+    check_existing_cluster "$MASTER_IP"
     
     # Display configuration summary
     display_config_summary

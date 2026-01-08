@@ -171,10 +171,20 @@ ensure_container_runtime_ready_debian() {
     ssh_execute "$node_ip" "curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /tmp/docker.gpg"
     ssh_execute "$node_ip" "sudo gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg /tmp/docker.gpg"
     ssh_execute "$node_ip" "sudo rm -f /tmp/docker.gpg"
+    
     # Get Ubuntu codename and add Docker repository
-    local ubuntu_codename=$(ssh_execute "$node_ip" "lsb_release -cs")
+    # Execute lsb_release on the remote node and capture output
+    local ubuntu_codename
+    ubuntu_codename=$(ssh_execute "$node_ip" "lsb_release -cs" | tr -d '[:space:]')
+    
+    log_info "Detected Ubuntu codename: $ubuntu_codename"
+    
+    # Remove old docker.list if exists
     ssh_execute "$node_ip" "sudo rm -f /etc/apt/sources.list.d/docker.list"
-    ssh_execute "$node_ip" "echo \"deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${ubuntu_codename} stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null"
+    
+    # Add Docker repository with the captured codename
+    ssh_execute "$node_ip" "echo 'deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $ubuntu_codename stable' | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null"
+    
     ssh_execute "$node_ip" "sudo apt-get update -o Acquire::ForceIPv4=true"
     
     # Install containerd (Docker repo). Fallback to Ubuntu's containerd if Docker repo is unreachable.
