@@ -70,9 +70,21 @@ get_hostname_from_ip() {
     
     # Try reverse DNS lookup
     if command_exists dig; then
-        dig +short -x "$ip" | sed 's/\.$//'
+        local hostname
+        hostname=$(dig +short -x "$ip" 2>/dev/null | head -n 1 | sed 's/\.$//')
+        if [ -n "$hostname" ]; then
+            echo "$hostname"
+        else
+            echo "$ip"
+        fi
     elif command_exists host; then
-        host "$ip" | awk '{print $NF}' | sed 's/\.$//'
+        local hostname
+        hostname=$(host "$ip" 2>/dev/null | grep "domain name pointer" | head -n 1 | awk '{print $NF}' | sed 's/\.$//')
+        if [ -n "$hostname" ]; then
+            echo "$hostname"
+        else
+            echo "$ip"
+        fi
     else
         # Fallback: just use the IP if no DNS tools available
         echo "$ip"
