@@ -144,7 +144,10 @@ restore_namespace() {
             
             # Only show output if there are unexpected errors
             if [ -n "$filtered_output" ] && [ $exit_code -ne 0 ]; then
-                echo "$filtered_output" | grep -q "Error" && log_warning "  Some $resource had issues (review if needed)"
+                log_error "  Failed to restore $resource:"
+                echo "$filtered_output"
+                log_error "Deployment failed with exit code: $exit_code"
+                exit 1
             fi
         fi
     done
