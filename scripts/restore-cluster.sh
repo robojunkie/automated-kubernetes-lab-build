@@ -133,9 +133,13 @@ restore_namespace() {
             fi
             
             # Apply resources and suppress expected errors (conflicts on auto-generated system resources)
+            # Use || true to prevent set -e from exiting on kubectl errors
             local output
+            local exit_code
+            set +e  # Temporarily disable exit-on-error
             output=$(kubectl apply -f "$file" 2>&1)
-            local exit_code=$?
+            exit_code=$?
+            set -e  # Re-enable exit-on-error
             
             # If successful, continue
             if [ $exit_code -eq 0 ]; then
