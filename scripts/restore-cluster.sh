@@ -146,28 +146,34 @@ restore_namespace() {
                 continue
             fi
             
-            # Filter out expected/ignorable errors
+            # Check if error contains any expected patterns (system-managed resources that conflict)
+            if echo "$output" | grep -q "kube-root-ca.crt"; then
+                # System-managed CA bundle - expected conflict, skip silently
+                continue
+            fi
+            
+            if echo "$output" | grep -q "Operation cannot be fulfilled.*the object has been modified"; then
+                # Resource modified during restore - expected race condition, skip silently
+                continue
+            fi
+            
+            if echo "$output" | grep -q "default.*service account"; then
+                # Default service account - auto-created by Kubernetes, skip silently
+                continue
+            fi
+            
+            # Filter out warning-only output
             local filtered_output
-            filtered_output=$(echo "$output" | grep -v "Warning:" | \
-                grep -v "Operation cannot be fulfilled" | \
-                grep -v "the object has been modified" | \
-                grep -v "field is immutable" | \
-                grep -v "error: no objects passed to apply" | \
-                grep -v "kube-root-ca.crt" | \
-                grep -v "default service account" | \
-                grep -v "kubernetes service" || true)
+            filtered_output=$(echo "$output" | grep -v "Warning:" | grep -v "^$" || true)
             
             # If after filtering there are still errors, this is unexpected - show and exit
             if [ -n "$filtered_output" ]; then
                 log_error "  Failed to restore $resource in $namespace namespace:"
                 echo "$filtered_output"
-                log_error ""
-                log_error "Original kubectl output (for debugging):"
-                echo "$output"
                 exit 1
             fi
             
-            # If filtered output is empty but exit code was non-zero, errors were all "expected" - continue silently
+            # If filtered output is empty, it was just warnings - continue
         fi
     done
 }
