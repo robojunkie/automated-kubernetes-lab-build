@@ -37,10 +37,14 @@ install_kubernetes_binaries_debian() {
     
     log_debug "Installing Kubernetes binaries (Debian) on: $node_ip (version: $k8s_version)"
     
-    # Remove old Kubernetes repository if it exists
+    # Clean up old/broken repository files from any previous failed attempts
+    log_info "Cleaning up any old repository configurations on $node_ip..."
     ssh_execute "$node_ip" "sudo rm -f /etc/apt/sources.list.d/kubernetes.list"
+    ssh_execute "$node_ip" "sudo rm -f /etc/apt/sources.list.d/docker.list*"
     ssh_execute "$node_ip" "sudo rm -f /etc/apt/keyrings/kubernetes-archive-keyring.gpg"
     ssh_execute "$node_ip" "sudo rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg"
+    ssh_execute "$node_ip" "sudo rm -rf /var/lib/apt/lists/download.docker.com*"
+    ssh_execute "$node_ip" "sudo apt-get clean"
     
     # Ensure required packages are installed
     ssh_execute "$node_ip" "sudo apt-get update && sudo apt-get install -y apt-transport-https ca-certificates curl gpg"
