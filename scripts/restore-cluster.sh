@@ -131,6 +131,11 @@ restore_namespace() {
             output=$(kubectl apply -f "$file" 2>&1)
             local exit_code=$?
             
+            # If successful, continue
+            if [ $exit_code -eq 0 ]; then
+                continue
+            fi
+            
             # Filter out expected/ignorable errors
             local filtered_output
             filtered_output=$(echo "$output" | grep -v "Warning:" | \
@@ -142,13 +147,15 @@ restore_namespace() {
                 grep -v "default service account" | \
                 grep -v "kubernetes service" || true)
             
-            # Only show output if there are unexpected errors
-            if [ -n "$filtered_output" ] && [ $exit_code -ne 0 ]; then
+            # If after filtering there are still errors, this is unexpected - show and exit
+            if [ -n "$filtered_output" ]; then
                 log_error "  Failed to restore $resource:"
                 echo "$filtered_output"
-                log_error "Deployment failed with exit code: $exit_code"
                 exit 1
             fi
+            
+            # If filtered output is empty but exit code was non-zero, errors were all "expected" - show them but continue
+            log_info "  Note: Some $resource had conflicts (expected during restore)"
         fi
     done
 }
