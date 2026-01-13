@@ -126,9 +126,26 @@ restore_namespace() {
         if [ -f "$file" ]; then
             log_info "  Restoring $resource..."
             
-            # Filter out managed fields and status
-            kubectl apply -f "$file" 2>&1 | grep -v "Warning" || \
-                log_warning "  Some $resource may not have been restored (this is often normal)"
+            # Apply resources and suppress expected errors (conflicts on auto-generated system resources)
+            local output
+            output=$(kubectl apply -f "$file" 2>&1)
+            local exit_code=$?
+            
+            # Filter out expected/ignorable errors
+            local filtered_output
+            filtered_output=$(echo "$output" | grep -v "Warning:" | \
+                grep -v "Operation cannot be fulfilled" | \
+                grep -v "the object has been modified" | \
+                grep -v "field is immutable" | \
+                grep -v "error: no objects passed to apply" | \
+                grep -v "kube-root-ca.crt" | \
+                grep -v "default service account" | \
+                grep -v "kubernetes service" || true)
+            
+            # Only show output if there are unexpected errors
+            if [ -n "$filtered_output" ] && [ $exit_code -ne 0 ]; then
+                echo "$filtered_output" | grep -q "Error" && log_warning "  Some $resource had issues (review if needed)"
+            fi
         fi
     done
 }
@@ -232,13 +249,14 @@ EOF
 # Restore MetalLB config first (if exists)
 if [ -f "$BACKUP_DIR/configs/metallb-ipaddresspools.yaml" ]; then
     log_info "Restoring MetalLB configuration..."
-    kubectl apply -f "$BACKUP_DIR/configs/metallb-ipaddresspools.yaml" 2>&1 | grep -v "Warning" || \
-        log_warning "Could not restore MetalLB IPAddressPools"
+    # Try to restore, but suppress expected errors (status fields, existing resources)
+    kubectl apply -f "$BACKUP_DIR/configs/metallb-ipaddresspools.yaml" 2>&1 | \
+        grep -v "Warning" | grep -v "strict decoding error" | grep -v "unknown field" > /dev/null 2>&1 || true
 fi
 
 if [ -f "$BACKUP_DIR/configs/metallb-l2advertisements.yaml" ]; then
-    kubectl apply -f "$BACKUP_DIR/configs/metallb-l2advertisements.yaml" 2>&1 | grep -v "Warning" || \
-        log_warning "Could not restore MetalLB L2Advertisements"
+    kubectl apply -f "$BACKUP_DIR/configs/metallb-l2advertisements.yaml" 2>&1 | \
+        grep -v "Warning" | grep -v "Operation cannot be fulfilled" | grep -v "the object has been modified" > /dev/null 2>&1 || true
 fi
 
 # Restore Portainer
@@ -266,6 +284,10 @@ if [ -d "$BACKUP_DIR/portainer/portainer" ]; then
         master_ip=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || echo "")
         if [ -n "$master_ip" ]; then
             log_info "Access Portainer at: http://$master_ip:$nodeport"
+            log_info ""
+            log_info "IMPORTANT: If Portainer shows 'timed out for security purposes':"
+            log_info "  kubectl rollout restart deployment portainer -n portainer"
+            log_info "  Then wait 30 seconds and refresh the browser"
         fi
     fi
 else

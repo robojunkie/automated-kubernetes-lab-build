@@ -377,11 +377,19 @@ EOF"
             if [[ -n "$external_ip" ]]; then
                 log_success "Portainer is available at: https://${external_ip}:9443"
                 log_info "If DNS is used, point a record to ${external_ip}."
+                log_info ""
+                log_info "IMPORTANT: If Portainer shows 'timed out for security purposes':"
+                log_info "  kubectl rollout restart deployment portainer -n portainer"
+                log_info "  Then wait 30 seconds and refresh the browser"
             else
                 log_warning "Portainer LoadBalancer IP not assigned yet. Check service status with: kubectl get svc -n portainer"
             fi
         else
             log_success "Portainer is available via NodePort: https://${master_ip}:${nodeport_port}"
+            log_info ""
+            log_info "IMPORTANT: If Portainer shows 'timed out for security purposes':"
+            log_info "  kubectl rollout restart deployment portainer -n portainer"
+            log_info "  Then wait 30 seconds and refresh the browser"
         fi
     }
 
