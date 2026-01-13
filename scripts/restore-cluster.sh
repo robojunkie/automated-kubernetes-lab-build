@@ -126,6 +126,12 @@ restore_namespace() {
         if [ -f "$file" ]; then
             log_info "  Restoring $resource..."
             
+            # Check if file has any content
+            if [ ! -s "$file" ]; then
+                log_info "  No $resource to restore (empty file)"
+                continue
+            fi
+            
             # Apply resources and suppress expected errors (conflicts on auto-generated system resources)
             local output
             output=$(kubectl apply -f "$file" 2>&1)
@@ -149,13 +155,15 @@ restore_namespace() {
             
             # If after filtering there are still errors, this is unexpected - show and exit
             if [ -n "$filtered_output" ]; then
-                log_error "  Failed to restore $resource:"
+                log_error "  Failed to restore $resource in $namespace namespace:"
                 echo "$filtered_output"
+                log_error ""
+                log_error "Original kubectl output (for debugging):"
+                echo "$output"
                 exit 1
             fi
             
-            # If filtered output is empty but exit code was non-zero, errors were all "expected" - show them but continue
-            log_info "  Note: Some $resource had conflicts (expected during restore)"
+            # If filtered output is empty but exit code was non-zero, errors were all "expected" - continue silently
         fi
     done
 }
