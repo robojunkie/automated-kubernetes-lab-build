@@ -496,13 +496,16 @@ wait_for_node_ready() {
     
     while [[ $attempt -le $max_attempts ]]; do
         log_debug "Checking node status (attempt $attempt/$max_attempts)..."
-        # Simpler approach: just grep for Ready in output to avoid jsonpath quoting issues
-        if ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get node $node_name 2>/dev/null | grep -q ' Ready '"; then
+        # Check if node status contains "Ready" (not "NotReady")
+        local node_status
+        node_status=$(ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get node $node_name --no-headers 2>/dev/null | awk '{print \$2}'" || echo "")
+        
+        if [[ "$node_status" == "Ready" ]]; then
             log_success "Node is ready: $node_name"
             return 0
         fi
         
-        log_debug "Node not ready yet. Waiting..."
+        log_debug "Node not ready yet (status: $node_status). Waiting..."
         sleep "$delay"
         attempt=$((attempt + 1))
     done
