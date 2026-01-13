@@ -188,11 +188,14 @@ ensure_container_runtime_ready_debian() {
     # Remove old docker.list if exists
     ssh_execute "$node_ip" "sudo rm -f /etc/apt/sources.list.d/docker.list"
     
-    # Write Docker repository configuration directly using cat with heredoc
-    # This avoids all variable expansion issues
-    ssh_execute "$node_ip" "cat <<EOF | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $ubuntu_codename stable
-EOF"
+    # Build the Docker repository line locally (variable expands here)
+    local docker_repo_content="deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${ubuntu_codename} stable"
+    
+    log_info "Writing Docker repository config: $docker_repo_content"
+    
+    # Write the file by piping the content through SSH
+    # Use echo -e to ensure proper handling, pipe to remote tee
+    echo "$docker_repo_content" | ssh ${SSH_KEY:+-i $SSH_KEY} -o StrictHostKeyChecking=accept-new "$node_ip" "sudo tee /etc/apt/sources.list.d/docker.list > /dev/null"
     
     ssh_execute "$node_ip" "sudo apt-get update -o Acquire::ForceIPv4=true"
     
