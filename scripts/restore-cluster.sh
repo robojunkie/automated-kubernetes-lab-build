@@ -162,6 +162,11 @@ restore_namespace() {
                 continue
             fi
             
+            if echo "$output" | grep -q "error: no objects passed to apply"; then
+                # Empty resource file - no objects of this type were backed up, skip silently
+                continue
+            fi
+            
             # Filter out warning-only output
             local filtered_output
             filtered_output=$(echo "$output" | grep -v "Warning:" | grep -v "^$" || true)
