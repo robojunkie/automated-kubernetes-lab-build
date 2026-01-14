@@ -251,8 +251,11 @@ collect_user_input() {
     CNI_PLUGIN="${CNI_PLUGIN:-calico}"
     validate_cni_plugin "$CNI_PLUGIN"
     
-        # Optional: Portainer dashboard
+    # Optional: Portainer dashboard
     log_info ""
+    log_info "Note: If you're rebuilding an existing cluster, any previously installed"
+    log_info "      components (including Portainer) will be backed up and restored automatically."
+    log_info "      This question only applies to fresh cluster installations."
     read -r -p "Install Portainer dashboard for cluster management? (yes/no) [default: yes]: " PORTAINER_INPUT
     PORTAINER_INPUT="${PORTAINER_INPUT:-yes}"
     if [[ "$PORTAINER_INPUT" =~ ^(yes|y|true)$ ]]; then

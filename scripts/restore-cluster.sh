@@ -167,6 +167,11 @@ restore_namespace() {
                 continue
             fi
             
+            if echo "$output" | grep -q "field is immutable"; then
+                # Trying to modify immutable fields (like metadata.uid) - expected when resource already exists, skip silently
+                continue
+            fi
+            
             # Filter out warning-only output
             local filtered_output
             filtered_output=$(echo "$output" | grep -v "Warning:" | grep -v "^$" || true)
