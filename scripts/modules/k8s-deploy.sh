@@ -496,12 +496,26 @@ wait_for_node_ready() {
     
     while [[ $attempt -le $max_attempts ]]; do
         log_debug "Checking node status (attempt $attempt/$max_attempts)..."
-        # Check if node status contains "Ready" (not "NotReady")
+        
+        # If node_name is an IP, we need to find the actual node name first
+        local actual_node_name="$node_name"
+        if [[ "$node_name" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            # It's an IP - find the node with this internal IP
+            actual_node_name=$(ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get nodes -o wide --no-headers 2>/dev/null | grep '$node_name' | awk '{print \$1}'" || echo "")
+            if [[ -z "$actual_node_name" ]]; then
+                log_debug "Could not find node with IP $node_name yet. Waiting..."
+                sleep "$delay"
+                attempt=$((attempt + 1))
+                continue
+            fi
+        fi
+        
+        # Check if node status is Ready
         local node_status
-        node_status=$(ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get node $node_name --no-headers 2>/dev/null | awk '{print \$2}'" || echo "")
+        node_status=$(ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get node $actual_node_name --no-headers 2>/dev/null | awk '{print \$2}'" || echo "")
         
         if [[ "$node_status" == "Ready" ]]; then
-            log_success "Node is ready: $node_name"
+            log_success "Node is ready: $actual_node_name"
             return 0
         fi
         
