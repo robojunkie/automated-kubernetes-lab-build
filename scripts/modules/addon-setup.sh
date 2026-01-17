@@ -361,6 +361,12 @@ EOF"
         # Wait for deployment ready
         ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl rollout status deployment/portainer -n portainer --timeout=300s" || true
 
+        # Automatically restart Portainer to avoid timeout issue
+        log_info "Restarting Portainer deployment to avoid security timeout..."
+        ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl rollout restart deployment portainer -n portainer" || true
+        sleep 5
+        ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl rollout status deployment/portainer -n portainer --timeout=60s" || true
+
         # Determine access URL
         if [[ "$public_access" == "true" ]]; then
             local external_ip=""
@@ -377,19 +383,11 @@ EOF"
             if [[ -n "$external_ip" ]]; then
                 log_success "Portainer is available at: https://${external_ip}:9443"
                 log_info "If DNS is used, point a record to ${external_ip}."
-                log_info ""
-                log_info "IMPORTANT: If Portainer shows 'timed out for security purposes':"
-                log_info "  kubectl rollout restart deployment portainer -n portainer"
-                log_info "  Then wait 30 seconds and refresh the browser"
             else
                 log_warning "Portainer LoadBalancer IP not assigned yet. Check service status with: kubectl get svc -n portainer"
             fi
         else
             log_success "Portainer is available via NodePort: https://${master_ip}:${nodeport_port}"
-            log_info ""
-            log_info "IMPORTANT: If Portainer shows 'timed out for security purposes':"
-            log_info "  kubectl rollout restart deployment portainer -n portainer"
-            log_info "  Then wait 30 seconds and refresh the browser"
         fi
     }
 

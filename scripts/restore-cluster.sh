@@ -316,16 +316,20 @@ if [ -d "$BACKUP_DIR/portainer/portainer" ]; then
     
     log_success "Portainer restore complete"
     
+    # Automatically restart Portainer to avoid timeout issue
+    log_info "Restarting Portainer deployment to avoid security timeout..."
+    kubectl rollout restart deployment portainer -n portainer 2>/dev/null || true
+    sleep 5
+    log_info "Waiting for Portainer to be ready..."
+    kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=portainer -n portainer --timeout=60s 2>/dev/null || \
+        log_warning "Portainer may still be starting"
+    
     # Get Portainer access info
     nodeport=$(kubectl get svc -n portainer portainer -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || echo "")
     if [ -n "$nodeport" ]; then
         master_ip=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || echo "")
         if [ -n "$master_ip" ]; then
             log_info "Access Portainer at: http://$master_ip:$nodeport"
-            log_info ""
-            log_info "IMPORTANT: If Portainer shows 'timed out for security purposes':"
-            log_info "  kubectl rollout restart deployment portainer -n portainer"
-            log_info "  Then wait 30 seconds and refresh the browser"
         fi
     fi
 else
