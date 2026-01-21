@@ -316,6 +316,20 @@ if [ -d "$BACKUP_DIR/portainer/portainer" ]; then
     
     log_success "Portainer restore complete"
     
+    # Apply kubectl shell fixes (security context and capabilities)
+    log_info "Applying kubectl shell compatibility fixes..."
+    kubectl patch deployment portainer -n portainer --type='json' -p='[
+      {"op": "replace", "path": "/spec/template/spec/containers/0/image", "value": "portainer/portainer-ce:2.33.6"},
+      {"op": "add", "path": "/spec/template/spec/containers/0/env", "value": [{"name": "EDGE_ID", "value": ""}]},
+      {"op": "add", "path": "/spec/template/spec/containers/0/securityContext", "value": {"runAsNonRoot": false, "runAsUser": 0, "capabilities": {"add": ["SYS_ADMIN"]}}}
+    ]' 2>/dev/null || log_warning "Could not apply all kubectl shell fixes, deployment may need manual update"
+    
+    # Ensure tunnel arguments are present
+    kubectl patch deployment portainer -n portainer --type='json' -p='[
+      {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--tunnel-addr=0.0.0.0"},
+      {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--tunnel-port=8000"}
+    ]' 2>/dev/null || true
+    
     # Automatically restart Portainer to avoid timeout issue
     log_info "Restarting Portainer deployment to avoid security timeout..."
     log_info "Waiting 10 seconds for Portainer to fully initialize before restart..."

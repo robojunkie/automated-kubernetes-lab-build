@@ -316,14 +316,24 @@ spec:
       - name: portainer
         image: portainer/portainer-ce:2.33.6
         imagePullPolicy: IfNotPresent
+        env:
+        - name: EDGE_ID
+          value: ""
         args:
         - "--http-disabled"
         - "--tunnel-addr=0.0.0.0"
+        - "--tunnel-port=8000"
         ports:
         - containerPort: 9443
           name: https
         - containerPort: 8000
           name: edge
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
+          capabilities:
+            add:
+            - SYS_ADMIN
         volumeMounts:
         - name: portainer-data
           mountPath: /data
