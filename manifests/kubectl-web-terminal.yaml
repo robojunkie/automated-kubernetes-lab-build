@@ -1,0 +1,93 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: web-terminal
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ssh-key
+  namespace: web-terminal
+type: Opaque
+data:
+  # Base64 encoded SSH private key will be added by script
+  id_ed25519: ""
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: terminal-config
+  namespace: web-terminal
+data:
+  entrypoint.sh: |
+    #!/bin/sh
+    # Copy SSH key from secret
+    mkdir -p /root/.ssh
+    cp /ssh-key/id_ed25519 /root/.ssh/id_ed25519
+    chmod 600 /root/.ssh/id_ed25519
+    
+    # Add jump box to known hosts
+    ssh-keyscan -H ${JUMP_HOST} >> /root/.ssh/known_hosts 2>/dev/null
+    
+    # Start ttyd with SSH to jump box
+    ttyd -p 7681 -W ssh -o StrictHostKeyChecking=no ${JUMP_USER}@${JUMP_HOST}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubectl-terminal
+  namespace: web-terminal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kubectl-terminal
+  template:
+    metadata:
+      labels:
+        app: kubectl-terminal
+    spec:
+      containers:
+      - name: ttyd
+        image: tsl0922/ttyd:alpine
+        env:
+        - name: JUMP_HOST
+          value: "192.168.1.201"  # Your jump box IP
+        - name: JUMP_USER
+          value: "rswanson"
+        ports:
+        - containerPort: 7681
+          name: http
+        volumeMounts:
+        - name: ssh-key
+          mountPath: /ssh-key
+          readOnly: true
+        - name: config
+          mountPath: /entrypoint.sh
+          subPath: entrypoint.sh
+        command: ["/bin/sh", "/entrypoint.sh"]
+      volumes:
+      - name: ssh-key
+        secret:
+          secretName: ssh-key
+          defaultMode: 0600
+      - name: config
+        configMap:
+          name: terminal-config
+          defaultMode: 0755
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubectl-terminal
+  namespace: web-terminal
+spec:
+  type: LoadBalancer  # or NodePort
+  ports:
+  - name: http
+    port: 7681
+    targetPort: 7681
+    # nodePort: 30681  # Uncomment for NodePort
+  selector:
+    app: kubectl-terminal

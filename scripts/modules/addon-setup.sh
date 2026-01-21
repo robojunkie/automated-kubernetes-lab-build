@@ -258,7 +258,7 @@ EOF"; then
 
         log_info "Deploying Portainer UI..."
 
-        # Base manifests (namespace, deployment with ephemeral storage)
+        # Base manifests (namespace, PVC, deployment)
         ssh_execute "$master_ip" "cat << 'EOF' | KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -
 apiVersion: v1
 kind: Namespace
@@ -284,6 +284,18 @@ roleRef:
   kind: ClusterRole
   name: cluster-admin
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: portainer-data
+  namespace: portainer
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -300,23 +312,41 @@ spec:
         app: portainer
     spec:
       serviceAccountName: portainer-sa
+      dnsPolicy: ClusterFirst
       containers:
       - name: portainer
-        image: portainer/portainer-ce:2.20.3
+        image: portainer/portainer-ce:2.33.6
         imagePullPolicy: IfNotPresent
+        env:
+        - name: EDGE_ID
+          value: ""
+        - name: KUBERNETES_SERVICE_HOST
+          value: "kubernetes.default.svc"
+        - name: KUBERNETES_SERVICE_PORT
+          value: "443"
+        - name: AGENT_SECRET
+          value: "portainer-secret"
         args:
         - "--http-disabled"
+        - "--tunnel-port=8000"
         ports:
         - containerPort: 9443
           name: https
         - containerPort: 8000
           name: edge
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
+          capabilities:
+            add:
+            - SYS_ADMIN
         volumeMounts:
         - name: portainer-data
           mountPath: /data
       volumes:
       - name: portainer-data
-        emptyDir: {}
+        persistentVolumeClaim:
+          claimName: portainer-data
 EOF"
 
         # Service manifest depends on public access choice
@@ -336,6 +366,7 @@ spec:
   - name: edge
     port: 8000
     targetPort: 8000
+    nodePort: 30776
   selector:
     app: portainer
 EOF"
@@ -353,6 +384,10 @@ spec:
     port: 9443
     targetPort: 9443
     nodePort: ${nodeport_port}
+  - name: edge
+    port: 8000
+    targetPort: 8000
+    nodePort: 30776
   selector:
     app: portainer
 EOF"
@@ -360,6 +395,15 @@ EOF"
 
         # Wait for deployment ready
         ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl rollout status deployment/portainer -n portainer --timeout=300s" || true
+
+        # Automatically restart Portainer to avoid timeout issue
+        log_info "Restarting Portainer deployment to avoid security timeout..."
+        log_info "Waiting 10 seconds for Portainer to fully initialize before restart..."
+        sleep 10
+        ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl rollout restart deployment portainer -n portainer" || true
+        log_info "Waiting for Portainer to restart completely..."
+        sleep 15
+        ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl rollout status deployment/portainer -n portainer --timeout=120s" || true
 
         # Determine access URL
         if [[ "$public_access" == "true" ]]; then

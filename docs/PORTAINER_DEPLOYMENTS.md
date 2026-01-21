@@ -16,6 +16,36 @@ After cluster deployment, access Portainer at:
 
 Default credentials are set during initial setup.
 
+## ⚠️ Known Limitations
+
+### Kubectl Shell (Exec into Containers)
+
+**Issue**: Portainer CE's kubectl shell feature may show "Console disconnected" errors due to WebSocket connectivity limitations between the browser and the Kubernetes API.
+
+**Recommended Alternatives**:
+
+1. **Use kubectl from your local machine** (Most Reliable):
+   ```bash
+   # Copy kubeconfig from the cluster
+   scp user@master-node:~/automated-kubernetes-lab-build/<cluster-name>-kubeconfig.yaml ~/.kube/config
+   
+   # Now use kubectl directly
+   kubectl exec -it <pod-name> -n <namespace> -- /bin/bash
+   ```
+
+2. **SSH to master node and use kubectl**:
+   ```bash
+   ssh user@master-node
+   kubectl exec -it <pod-name> -n <namespace> -- /bin/bash
+   ```
+
+3. **Deploy Kubernetes Dashboard** (Alternative Web UI with working terminal):
+   ```bash
+   kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml
+   ```
+
+For most operations, Portainer's web UI works well for viewing resources, logs, and managing deployments. Use kubectl directly when shell access to containers is needed.
+
 ## Quick Navigation
 
 1. [Nginx Ingress Controller](#nginx-ingress-controller)

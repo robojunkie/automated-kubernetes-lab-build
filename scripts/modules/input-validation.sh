@@ -68,16 +68,11 @@ validate_ip() {
 get_hostname_from_ip() {
     local ip=$1
     
-    # Try reverse DNS lookup
-    if command_exists dig; then
-        dig +short -x "$ip" | sed 's/\.$//'
-    elif command_exists host; then
-        host "$ip" | awk '{print $NF}' | sed 's/\.$//'
-    else
-        # Fallback: just use the IP if no DNS tools available
-        echo "$ip"
-    fi
+    # For reliability, just return the IP address
+    # Reverse DNS lookups can be unreliable and cause issues
+    echo "$ip"
 }
+
 
 ################################################################################
 # Validate positive integer

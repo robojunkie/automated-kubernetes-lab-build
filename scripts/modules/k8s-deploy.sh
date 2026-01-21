@@ -37,10 +37,14 @@ install_kubernetes_binaries_debian() {
     
     log_debug "Installing Kubernetes binaries (Debian) on: $node_ip (version: $k8s_version)"
     
-    # Remove old Kubernetes repository if it exists
+    # Clean up old/broken repository files from any previous failed attempts
+    log_info "Cleaning up any old repository configurations on $node_ip..."
     ssh_execute "$node_ip" "sudo rm -f /etc/apt/sources.list.d/kubernetes.list"
+    ssh_execute "$node_ip" "sudo rm -f /etc/apt/sources.list.d/docker.list*"
     ssh_execute "$node_ip" "sudo rm -f /etc/apt/keyrings/kubernetes-archive-keyring.gpg"
     ssh_execute "$node_ip" "sudo rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg"
+    ssh_execute "$node_ip" "sudo rm -rf /var/lib/apt/lists/download.docker.com*"
+    ssh_execute "$node_ip" "sudo apt-get clean"
     
     # Ensure required packages are installed
     ssh_execute "$node_ip" "sudo apt-get update && sudo apt-get install -y apt-transport-https ca-certificates curl gpg"
@@ -171,10 +175,39 @@ ensure_container_runtime_ready_debian() {
     ssh_execute "$node_ip" "curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /tmp/docker.gpg"
     ssh_execute "$node_ip" "sudo gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg /tmp/docker.gpg"
     ssh_execute "$node_ip" "sudo rm -f /tmp/docker.gpg"
+    
     # Get Ubuntu codename and add Docker repository
-    local ubuntu_codename=$(ssh_execute "$node_ip" "lsb_release -cs")
-    ssh_execute "$node_ip" "sudo rm -f /etc/apt/sources.list.d/docker.list"
-    ssh_execute "$node_ip" "echo \"deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${ubuntu_codename} stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null"
+    # Execute lsb_release on the remote node and capture output
+    local ubuntu_codename
+    ubuntu_codename=$(ssh_execute "$node_ip" "lsb_release -cs" | tr -d '[:space:]')
+    
+    log_info "Detected Ubuntu codename: '$ubuntu_codename'"
+    
+    # Validate we got a codename
+    if [[ -z "$ubuntu_codename" ]]; then
+        log_error "Failed to detect Ubuntu codename"
+        return 1
+    fi
+    
+    # Force remove old docker.list and any cached apt lists
+    ssh_execute "$node_ip" "sudo rm -f /etc/apt/sources.list.d/docker.list*"
+    ssh_execute "$node_ip" "sudo rm -rf /var/lib/apt/lists/download.docker.com*"
+    
+    # Build the Docker repository line locally (variable expands here)
+    local docker_repo_content="deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${ubuntu_codename} stable"
+    
+    log_info "Writing Docker repository config: $docker_repo_content"
+    
+    # Write the file by piping the content through SSH
+    # Use echo to pipe the locally-expanded content to remote tee
+    echo "$docker_repo_content" | ssh ${SSH_KEY:+-i $SSH_KEY} -o StrictHostKeyChecking=accept-new "$node_ip" "sudo tee /etc/apt/sources.list.d/docker.list > /dev/null"
+    
+    # Verify what was written
+    log_info "Verifying docker.list content:"
+    ssh_execute "$node_ip" "cat /etc/apt/sources.list.d/docker.list"
+    
+    # Clean apt cache and update
+    ssh_execute "$node_ip" "sudo apt-get clean"
     ssh_execute "$node_ip" "sudo apt-get update -o Acquire::ForceIPv4=true"
     
     # Install containerd (Docker repo). Fallback to Ubuntu's containerd if Docker repo is unreachable.
@@ -463,13 +496,30 @@ wait_for_node_ready() {
     
     while [[ $attempt -le $max_attempts ]]; do
         log_debug "Checking node status (attempt $attempt/$max_attempts)..."
-        # Simpler approach: just grep for Ready in output to avoid jsonpath quoting issues
-        if ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get node $node_name 2>/dev/null | grep -q ' Ready '"; then
-            log_success "Node is ready: $node_name"
+        
+        # If node_name is an IP, we need to find the actual node name first
+        local actual_node_name="$node_name"
+        if [[ "$node_name" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            # It's an IP - find the node with this internal IP
+            actual_node_name=$(ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get nodes -o wide --no-headers 2>/dev/null | grep '$node_name' | awk '{print \$1}'" || echo "")
+            if [[ -z "$actual_node_name" ]]; then
+                log_debug "Could not find node with IP $node_name yet. Waiting..."
+                sleep "$delay"
+                attempt=$((attempt + 1))
+                continue
+            fi
+        fi
+        
+        # Check if node status is Ready
+        local node_status
+        node_status=$(ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get node $actual_node_name --no-headers 2>/dev/null | awk '{print \$2}'" || echo "")
+        
+        if [[ "$node_status" == "Ready" ]]; then
+            log_success "Node is ready: $actual_node_name"
             return 0
         fi
         
-        log_debug "Node not ready yet. Waiting..."
+        log_debug "Node not ready yet (status: $node_status). Waiting..."
         sleep "$delay"
         attempt=$((attempt + 1))
     done
