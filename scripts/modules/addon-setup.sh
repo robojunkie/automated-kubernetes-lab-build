@@ -314,10 +314,11 @@ spec:
       serviceAccountName: portainer-sa
       containers:
       - name: portainer
-        image: portainer/portainer-ce:2.20.3
+        image: portainer/portainer-ce:2.33.6
         imagePullPolicy: IfNotPresent
         args:
         - "--http-disabled"
+        - "--tunnel-addr=0.0.0.0"
         ports:
         - containerPort: 9443
           name: https
