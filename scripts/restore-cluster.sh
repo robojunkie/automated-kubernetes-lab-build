@@ -316,27 +316,72 @@ if [ -d "$BACKUP_DIR/portainer/portainer" ]; then
     
     log_success "Portainer restore complete"
     
-    # Apply kubectl shell fixes (security context and capabilities)
-    log_info "Applying kubectl shell compatibility fixes..."
-    kubectl patch deployment portainer -n portainer --type='json' -p='[
-      {"op": "replace", "path": "/spec/template/spec/containers/0/image", "value": "portainer/portainer-ce:2.33.6"},
-      {"op": "add", "path": "/spec/template/spec/containers/0/env", "value": [{"name": "EDGE_ID", "value": ""}]},
-      {"op": "add", "path": "/spec/template/spec/containers/0/securityContext", "value": {"runAsNonRoot": false, "runAsUser": 0, "capabilities": {"add": ["SYS_ADMIN"]}}}
-    ]' 2>/dev/null || log_warning "Could not apply all kubectl shell fixes, deployment may need manual update"
+    # Apply kubectl shell fixes by deleting and letting it be recreated with new config
+    log_info "Upgrading Portainer deployment for kubectl shell compatibility..."
+    kubectl delete deployment portainer -n portainer 2>/dev/null || true
     
-    # Ensure tunnel arguments are present
-    kubectl patch deployment portainer -n portainer --type='json' -p='[
-      {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--tunnel-addr=0.0.0.0"},
-      {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--tunnel-port=8000"}
-    ]' 2>/dev/null || true
+    # Wait for old pods to terminate
+    sleep 5
     
-    # Automatically restart Portainer to avoid timeout issue
-    log_info "Restarting Portainer deployment to avoid security timeout..."
-    log_info "Waiting 10 seconds for Portainer to fully initialize before restart..."
-    sleep 10
-    kubectl rollout restart deployment portainer -n portainer 2>/dev/null || true
-    log_info "Waiting for Portainer to restart completely..."
-    sleep 15
+    # Deploy updated Portainer configuration
+    cat << 'EOF' | kubectl apply -f -
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: portainer
+  namespace: portainer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: portainer
+  template:
+    metadata:
+      labels:
+        app: portainer
+    spec:
+      serviceAccountName: portainer-sa
+      dnsPolicy: ClusterFirst
+      containers:
+      - name: portainer
+        image: portainer/portainer-ce:2.33.6
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: EDGE_ID
+          value: ""
+        - name: KUBERNETES_SERVICE_HOST
+          value: "kubernetes.default.svc"
+        - name: KUBERNETES_SERVICE_PORT
+          value: "443"
+        - name: AGENT_SECRET
+          value: "portainer-secret"
+        args:
+        - "--http-disabled"
+        - "--tunnel-port=8000"
+        ports:
+        - containerPort: 9443
+          name: https
+        - containerPort: 8000
+          name: edge
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
+          capabilities:
+            add:
+            - SYS_ADMIN
+        volumeMounts:
+        - name: portainer-data
+          mountPath: /data
+      volumes:
+      - name: portainer-data
+        persistentVolumeClaim:
+          claimName: portainer-data
+EOF
+    
+    # Wait for the new deployment to be ready
+    log_info "Waiting for upgraded Portainer to be ready..."
+    kubectl rollout status deployment/portainer -n portainer --timeout=300s 2>/dev/null || true
+    sleep 5
     log_info "Waiting for Portainer to be ready..."
     kubectl wait --for=condition=ready pod -l app=portainer -n portainer --timeout=120s 2>/dev/null || \
         log_warning "Portainer may still be starting"

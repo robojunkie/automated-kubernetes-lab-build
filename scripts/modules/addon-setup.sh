@@ -312,6 +312,7 @@ spec:
         app: portainer
     spec:
       serviceAccountName: portainer-sa
+      dnsPolicy: ClusterFirst
       containers:
       - name: portainer
         image: portainer/portainer-ce:2.33.6
@@ -319,9 +320,14 @@ spec:
         env:
         - name: EDGE_ID
           value: ""
+        - name: KUBERNETES_SERVICE_HOST
+          value: "kubernetes.default.svc"
+        - name: KUBERNETES_SERVICE_PORT
+          value: "443"
+        - name: AGENT_SECRET
+          value: "portainer-secret"
         args:
         - "--http-disabled"
-        - "--tunnel-addr=0.0.0.0"
         - "--tunnel-port=8000"
         ports:
         - containerPort: 9443
@@ -360,6 +366,7 @@ spec:
   - name: edge
     port: 8000
     targetPort: 8000
+    nodePort: 30776
   selector:
     app: portainer
 EOF"
@@ -377,6 +384,10 @@ spec:
     port: 9443
     targetPort: 9443
     nodePort: ${nodeport_port}
+  - name: edge
+    port: 8000
+    targetPort: 8000
+    nodePort: 30776
   selector:
     app: portainer
 EOF"
