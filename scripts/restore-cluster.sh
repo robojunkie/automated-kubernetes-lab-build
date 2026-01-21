@@ -305,7 +305,7 @@ if [ -d "$BACKUP_DIR/portainer/portainer" ]; then
     
     # Wait for Portainer pods to be ready
     log_info "Waiting for Portainer pods to be ready..."
-    kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=portainer -n portainer --timeout=300s 2>/dev/null || \
+    kubectl wait --for=condition=ready pod -l app=portainer -n portainer --timeout=300s 2>/dev/null || \
         log_warning "Portainer pods may not be ready yet"
     
     # Restore PVC data
@@ -318,10 +318,13 @@ if [ -d "$BACKUP_DIR/portainer/portainer" ]; then
     
     # Automatically restart Portainer to avoid timeout issue
     log_info "Restarting Portainer deployment to avoid security timeout..."
+    log_info "Waiting 10 seconds for Portainer to fully initialize before restart..."
+    sleep 10
     kubectl rollout restart deployment portainer -n portainer 2>/dev/null || true
-    sleep 5
+    log_info "Waiting for Portainer to restart completely..."
+    sleep 15
     log_info "Waiting for Portainer to be ready..."
-    kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=portainer -n portainer --timeout=60s 2>/dev/null || \
+    kubectl wait --for=condition=ready pod -l app=portainer -n portainer --timeout=120s 2>/dev/null || \
         log_warning "Portainer may still be starting"
     
     # Get Portainer access info

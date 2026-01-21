@@ -258,7 +258,7 @@ EOF"; then
 
         log_info "Deploying Portainer UI..."
 
-        # Base manifests (namespace, deployment with ephemeral storage)
+        # Base manifests (namespace, PVC, deployment)
         ssh_execute "$master_ip" "cat << 'EOF' | KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -
 apiVersion: v1
 kind: Namespace
@@ -283,6 +283,18 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: cluster-admin
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: portainer-data
+  namespace: portainer
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -316,7 +328,8 @@ spec:
           mountPath: /data
       volumes:
       - name: portainer-data
-        emptyDir: {}
+        persistentVolumeClaim:
+          claimName: portainer-data
 EOF"
 
         # Service manifest depends on public access choice
@@ -363,9 +376,12 @@ EOF"
 
         # Automatically restart Portainer to avoid timeout issue
         log_info "Restarting Portainer deployment to avoid security timeout..."
+        log_info "Waiting 10 seconds for Portainer to fully initialize before restart..."
+        sleep 10
         ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl rollout restart deployment portainer -n portainer" || true
-        sleep 5
-        ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl rollout status deployment/portainer -n portainer --timeout=60s" || true
+        log_info "Waiting for Portainer to restart completely..."
+        sleep 15
+        ssh_execute "$master_ip" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl rollout status deployment/portainer -n portainer --timeout=120s" || true
 
         # Determine access URL
         if [[ "$public_access" == "true" ]]; then
