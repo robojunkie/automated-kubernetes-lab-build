@@ -1,0 +1,161 @@
+- defaultTab: nodes
+  description: Restarts MetalLB speaker pods to re-announce LoadBalancer IPs via Layer 2 ARP. Use this when LoadBalancer services become unreachable after cluster restarts or network changes.
+  executionEnabled: true
+  id: fix-metallb
+  loglevel: INFO
+  name: Fix MetalLB LoadBalancers
+  nodeFilterEditable: false
+  plugins:
+    ExecutionLifecycle: null
+  scheduleEnabled: true
+  sequence:
+    commands:
+    - exec: /scripts/fix-metallb.sh
+    keepgoing: false
+    strategy: node-first
+  uuid: fix-metallb
+
+- defaultTab: nodes
+  description: Restarts a Kubernetes deployment by performing a rollout restart. This gracefully recreates all pods without downtime.
+  executionEnabled: true
+  id: restart-service
+  loglevel: INFO
+  name: Restart Service/Deployment
+  nodeFilterEditable: false
+  options:
+  - name: namespace
+    description: Kubernetes namespace
+    required: true
+    value: default
+  - name: deployment
+    description: Deployment name to restart
+    required: true
+  sequence:
+    commands:
+    - exec: /scripts/restart-service.sh ${option.namespace} ${option.deployment}
+    keepgoing: false
+    strategy: node-first
+  uuid: restart-service
+
+- defaultTab: output
+  description: Performs a backup of all Kubernetes resources across all namespaces. Resources are saved as YAML files organized by namespace.
+  executionEnabled: true
+  id: backup-cluster
+  loglevel: INFO
+  name: Backup Cluster Resources
+  nodeFilterEditable: false
+  sequence:
+    commands:
+    - exec: /scripts/backup-cluster.sh
+    keepgoing: false
+    strategy: node-first
+  uuid: backup-cluster
+
+- defaultTab: output
+  description: Comprehensive cluster health check showing node status, system pods, MetalLB status, LoadBalancer services, and PVC status.
+  executionEnabled: true
+  id: check-health
+  loglevel: INFO
+  name: Check Cluster Health
+  nodeFilterEditable: false
+  schedule:
+    crontab: '0 */6 * * *'
+    enabled: true
+  sequence:
+    commands:
+    - exec: /scripts/check-cluster-health.sh
+    keepgoing: false
+    strategy: node-first
+  uuid: check-health
+
+- defaultTab: nodes
+  description: Scales a Kubernetes deployment to the specified number of replicas. Use 0 to stop the application, higher numbers to add redundancy.
+  executionEnabled: true
+  id: scale-deployment
+  loglevel: INFO
+  name: Scale Deployment
+  nodeFilterEditable: false
+  options:
+  - name: namespace
+    description: Kubernetes namespace
+    required: true
+    value: default
+  - name: deployment
+    description: Deployment name to scale
+    required: true
+  - name: replicas
+    description: Number of replicas (0 to stop, 1+ to run)
+    required: true
+    value: '1'
+  sequence:
+    commands:
+    - exec: /scripts/scale-deployment.sh ${option.namespace} ${option.deployment} ${option.replicas}
+    keepgoing: false
+    strategy: node-first
+  uuid: scale-deployment
+
+- defaultTab: output
+  description: Lists all LoadBalancer services across all namespaces with their assigned external IPs and ports.
+  executionEnabled: true
+  id: list-loadbalancers
+  loglevel: INFO
+  name: List LoadBalancer Services
+  nodeFilterEditable: false
+  sequence:
+    commands:
+    - exec: kubectl get svc -A -o wide | grep LoadBalancer
+    keepgoing: false
+    strategy: node-first
+  uuid: list-loadbalancers
+
+- defaultTab: output
+  description: Shows all pods across all namespaces, useful for quickly identifying pod issues.
+  executionEnabled: true
+  id: list-all-pods
+  loglevel: INFO
+  name: List All Pods
+  nodeFilterEditable: false
+  sequence:
+    commands:
+    - exec: kubectl get pods -A -o wide
+    keepgoing: false
+    strategy: node-first
+  uuid: list-all-pods
+
+- defaultTab: output
+  description: Displays all PersistentVolumeClaims across all namespaces with their status and capacity.
+  executionEnabled: true
+  id: list-pvcs
+  loglevel: INFO
+  name: List PersistentVolumeClaims
+  nodeFilterEditable: false
+  sequence:
+    commands:
+    - exec: kubectl get pvc -A
+    keepgoing: false
+    strategy: node-first
+  uuid: list-pvcs
+- defaultTab: nodes
+  description: Adds or updates a Rundeck user in the realm.properties file. User will be able to login immediately with the new password.
+  executionEnabled: true
+  id: add-user
+  loglevel: INFO
+  name: Add/Update Rundeck User
+  nodeFilterEditable: false
+  options:
+  - name: username
+    description: Username for the new or existing user
+    required: true
+  - name: password
+    description: Password for the user
+    required: true
+  - name: roles
+    description: Comma-separated roles (user, admin)
+    required: true
+    value: user
+  sequence:
+    commands:
+    - exec: /scripts/add-user.sh ${option.username} ${option.password} ${option.roles}
+    keepgoing: false
+    strategy: node-first
+  uuid: add-user

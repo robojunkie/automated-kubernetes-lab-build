@@ -1,0 +1,76 @@
+---
+# Backup Kubernetes resources to YAML files
+- name: Backup Kubernetes Cluster Resources
+  hosts: localhost
+  gather_facts: true
+  
+  vars:
+    backup_dir: "/tmp/k8s-backups/{{ ansible_date_time.date }}-{{ ansible_date_time.hour }}{{ ansible_date_time.minute }}"
+    
+  tasks:
+    - name: Create backup directory
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0755'
+        
+    - name: Get all namespaces
+      kubernetes.core.k8s_info:
+        kind: Namespace
+      register: namespaces
+      
+    - name: Backup namespace resources
+      kubernetes.core.k8s_info:
+        kind: "{{ item }}"
+        namespace: "{{ ns.metadata.name }}"
+      register: resources
+      loop:
+        - Deployment
+        - StatefulSet
+        - DaemonSet
+        - Service
+        - ConfigMap
+        - Secret
+        - PersistentVolumeClaim
+        - Ingress
+      loop_control:
+        loop_var: item
+      vars:
+        ns: "{{ ns_item }}"
+      when: ns.metadata.name not in ['kube-system', 'kube-public', 'kube-node-lease']
+      with_items: "{{ namespaces.resources }}"
+      loop_control:
+        loop_var: ns_item
+        
+    - name: Save backup files
+      copy:
+        content: "{{ item.resources | to_nice_yaml }}"
+        dest: "{{ backup_dir }}/{{ item.ns }}-{{ item.kind }}.yaml"
+      loop: "{{ resources.results }}"
+      when: item.resources | length > 0
+      loop_control:
+        label: "{{ item.ns }}/{{ item.kind }}"
+        
+    - name: Backup PersistentVolumes
+      kubernetes.core.k8s_info:
+        kind: PersistentVolume
+      register: pvs
+      
+    - name: Save PersistentVolumes
+      copy:
+        content: "{{ pvs.resources | to_nice_yaml }}"
+        dest: "{{ backup_dir }}/persistent-volumes.yaml"
+      when: pvs.resources | length > 0
+      
+    - name: Create backup summary
+      copy:
+        content: |
+          Kubernetes Cluster Backup
+          Date: {{ ansible_date_time.iso8601 }}
+          Namespaces backed up: {{ namespaces.resources | length }}
+          Location: {{ backup_dir }}
+        dest: "{{ backup_dir }}/backup-summary.txt"
+        
+    - name: Display backup location
+      debug:
+        msg: "Backup completed successfully at {{ backup_dir }}"

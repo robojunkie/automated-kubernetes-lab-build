@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wordpress
+  namespace: wordpress
+spec:
+  replicas: {{ .Values.wordpress.replicas }}
+  selector:
+    matchLabels:
+      app: wordpress
+  template:
+    metadata:
+      labels:
+        app: wordpress
+      annotations:
+        container.apparmor.security.beta.kubernetes.io/wordpress: runtime/default
+    spec:
+      securityContext:
+        runAsNonRoot: {{ .Values.wordpress.securityContext.runAsNonRoot }}
+        runAsUser: {{ .Values.wordpress.securityContext.runAsUser }}
+        fsGroup: {{ .Values.wordpress.securityContext.fsGroup }}
+        seccompProfile:
+          type: {{ .Values.wordpress.securityContext.seccompProfile.type }}
+      containers:
+      - name: wordpress
+        image: {{ .Values.wordpress.image }}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false  # WordPress needs to write to /var/www/html
+          capabilities:
+            drop: {{ .Values.wordpress.securityContext.capabilities.drop | toYaml | nindent 14 }}
+            add: {{ .Values.wordpress.securityContext.capabilities.add | toYaml | nindent 14 }}
+        env:
+        - name: WORDPRESS_DB_HOST
+          value: mysql
+        - name: WORDPRESS_DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: mysql-user
+        - name: WORDPRESS_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: mysql-password
+        - name: WORDPRESS_DB_NAME
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: mysql-database
+        ports:
+        - containerPort: 80
+          name: http
+        {{- if .Values.persistence.enabled }}
+        volumeMounts:
+        - name: wordpress-storage
+          mountPath: /var/www/html
+        {{- end }}
+        resources:
+          requests:
+            memory: {{ .Values.resources.wordpress.requests.memory }}
+            cpu: {{ .Values.resources.wordpress.requests.cpu }}
+          limits:
+            memory: {{ .Values.resources.wordpress.limits.memory }}
+            cpu: {{ .Values.resources.wordpress.limits.cpu }}
+      {{- if .Values.persistence.enabled }}
+      volumes:
+      - name: wordpress-storage
+        persistentVolumeClaim:
+          claimName: wordpress-pvc
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wordpress
+  namespace: wordpress
+spec:
+  type: {{ .Values.wordpress.serviceType }}
+  ports:
+  - port: {{ .Values.wordpress.servicePort }}
+    targetPort: 80
+    protocol: TCP
+    name: http
+  selector:
+    app: wordpress

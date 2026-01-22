@@ -1,0 +1,119 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rundeck-scripts
+  namespace: rundeck
+data:
+  fix-metallb.sh: |
+    #!/bin/bash
+    set -e
+    echo "=== Restarting MetalLB Speaker Pods ==="
+    kubectl delete pod -n metallb-system -l component=speaker
+    echo "Waiting for speaker pods to restart..."
+    sleep 5
+    kubectl wait --for=condition=ready pod -n metallb-system -l component=speaker --timeout=60s
+    echo ""
+    echo "=== Verifying LoadBalancer Services ==="
+    kubectl get svc -A -o wide | grep LoadBalancer
+    echo ""
+    echo "✓ MetalLB speakers restarted successfully"
+
+  restart-service.sh: |
+    #!/bin/bash
+    set -e
+    NAMESPACE="${1:-default}"
+    DEPLOYMENT="${2}"
+    
+    if [ -z "$DEPLOYMENT" ]; then
+      echo "Usage: restart-service.sh <namespace> <deployment-name>"
+      exit 1
+    fi
+    
+    echo "=== Restarting $DEPLOYMENT in namespace $NAMESPACE ==="
+    kubectl rollout restart deployment/$DEPLOYMENT -n $NAMESPACE
+    kubectl rollout status deployment/$DEPLOYMENT -n $NAMESPACE
+    echo "✓ $DEPLOYMENT restarted successfully"
+
+  backup-cluster.sh: |
+    #!/bin/bash
+    set -e
+    BACKUP_DIR="/backups/$(date +%Y%m%d-%H%M%S)"
+    mkdir -p $BACKUP_DIR
+    
+    echo "=== Backing up cluster resources ==="
+    for ns in $(kubectl get ns -o jsonpath='{.items[*].metadata.name}'); do
+      echo "Backing up namespace: $ns"
+      kubectl get all,cm,secret,pvc,ingress -n $ns -o yaml > $BACKUP_DIR/$ns.yaml 2>/dev/null || true
+    done
+    
+    echo "✓ Backup completed: $BACKUP_DIR"
+    ls -lh $BACKUP_DIR
+
+  check-cluster-health.sh: |
+    #!/bin/bash
+    set -e
+    echo "=== Cluster Node Status ==="
+    kubectl get nodes -o wide
+    echo ""
+    echo "=== System Pods Status ==="
+    kubectl get pods -n kube-system
+    echo ""
+    echo "=== MetalLB Status ==="
+    kubectl get pods -n metallb-system
+    echo ""
+    echo "=== LoadBalancer Services ==="
+    kubectl get svc -A | grep LoadBalancer
+    echo ""
+    echo "=== PVC Status ==="
+    kubectl get pvc -A
+    echo ""
+    echo "✓ Health check complete"
+
+  scale-deployment.sh: |
+    #!/bin/bash
+    set -e
+    NAMESPACE="${1}"
+    DEPLOYMENT="${2}"
+    REPLICAS="${3}"
+    
+    if [ -z "$REPLICAS" ]; then
+      echo "Usage: scale-deployment.sh <namespace> <deployment-name> <replicas>"
+      exit 1
+    fi
+    
+    echo "=== Scaling $DEPLOYMENT to $REPLICAS replicas ==="
+    kubectl scale deployment/$DEPLOYMENT -n $NAMESPACE --replicas=$REPLICAS
+    kubectl rollout status deployment/$DEPLOYMENT -n $NAMESPACE
+    echo "✓ Scaled successfully"
+  add-user.sh: |
+    #!/bin/bash
+    set -e
+    USERNAME="${1}"
+    PASSWORD="${2}"
+    ROLES="${3:-user}"
+    
+    if [ -z "$PASSWORD" ]; then
+      echo "Usage: add-user.sh <username> <password> [roles]"
+      echo "Example: add-user.sh john mypassword user"
+      echo "Example: add-user.sh admin newpass admin,user"
+      exit 1
+    fi
+    
+    REALM_FILE="/home/rundeck/server/config/realm.properties"
+    
+    echo "=== Adding/Updating user: $USERNAME with roles: $ROLES ==="
+    
+    # Check if user exists
+    if grep -q "^$USERNAME:" "$REALM_FILE"; then
+      echo "User exists, updating..."
+      sed -i "s/^$USERNAME:.*/$USERNAME:$PASSWORD,$ROLES/" "$REALM_FILE"
+    else
+      echo "Creating new user..."
+      echo "$USERNAME:$PASSWORD,$ROLES" >> "$REALM_FILE"
+    fi
+    
+    echo "✓ User $USERNAME updated"
+    echo "Changes will take effect on next login"
+    echo ""
+    echo "Current users:"
+    grep -E "^[^#]" "$REALM_FILE" | cut -d: -f1

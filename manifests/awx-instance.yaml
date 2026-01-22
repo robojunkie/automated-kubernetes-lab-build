@@ -1,0 +1,30 @@
+---
+apiVersion: awx.ansible.com/v1beta1
+kind: AWX
+metadata:
+  name: awx
+  namespace: awx
+spec:
+  # Service configuration - LoadBalancer for MetalLB
+  service_type: loadbalancer
+  
+  # Use managed PostgreSQL (operator will deploy it)
+  postgres_storage_class: local-path
+  postgres_storage_requirements:
+    requests:
+      storage: 10Gi
+  
+  # Projects storage
+  projects_persistence: true
+  projects_storage_access_mode: ReadWriteOnce
+  projects_storage_size: 10Gi
+  
+  # Task replicas - execution nodes distributed across workers
+  task_replicas: 2
+  
+  # Admin credentials
+  admin_user: admin
+  admin_password_secret: awx-admin-password
+  
+  # Hostname
+  hostname: awx.home.lab

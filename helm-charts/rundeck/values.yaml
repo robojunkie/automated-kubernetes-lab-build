@@ -1,0 +1,32 @@
+# Rundeck Configuration
+rundeck:
+  image: rundeck/rundeck:5.0.1
+  replicas: 1
+  adminUser: admin
+  adminPassword: changeme123  # Change this!
+  
+# Service Configuration
+service:
+  type: LoadBalancer
+  port: 4440
+  
+# Storage Configuration
+persistence:
+  enabled: true
+  size: 10Gi
+  storageClass: ""  # Use default storage class
+  
+# Resource Limits
+resources:
+  requests:
+    memory: "512Mi"
+    cpu: "250m"
+  limits:
+    memory: "2Gi"
+    cpu: "1000m"
+
+# RBAC Configuration
+rbac:
+  # Create ServiceAccount with cluster-admin for full kubectl access
+  # In production, you'd want to limit this to specific namespaces
+  clusterAdmin: true

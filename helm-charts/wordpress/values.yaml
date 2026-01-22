@@ -1,0 +1,67 @@
+# WordPress Configuration
+wordpress:
+  image: wordpress:latest
+  replicas: 1
+  serviceType: LoadBalancer  # or NodePort
+  servicePort: 80
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 33  # www-data
+    fsGroup: 33
+    seccompProfile:
+      type: RuntimeDefault
+    capabilities:
+      drop:
+        - ALL
+      add:
+        - NET_BIND_SERVICE
+
+# MySQL Configuration
+mysql:
+  image: mysql:8.0
+  rootPassword: changeme123
+  database: wordpress
+  user: wordpress
+  password: wordpress123
+  storageSize: 10Gi
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 999  # mysql user
+    fsGroup: 999
+    seccompProfile:
+      type: RuntimeDefault
+    capabilities:
+      drop:
+        - ALL
+
+# Storage
+persistence:
+  enabled: true
+  storageClass: local-path
+  wordpressSize: 10Gi
+  mysqlSize: 10Gi
+
+# Security Settings
+security:
+  networkPolicy:
+    enabled: true
+  podSecurityPolicy:
+    enabled: true
+  scanImages: false  # Set to true to scan images on deploy
+
+# Resource limits
+resources:
+  wordpress:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  mysql:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"

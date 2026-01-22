@@ -1,0 +1,229 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: metallb-watchdog
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: metallb-watchdog
+  namespace: metallb-watchdog
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: metallb-watchdog
+rules:
+- apiGroups: [""]
+  resources: ["services"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "delete"]
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: metallb-watchdog
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: metallb-watchdog
+subjects:
+- kind: ServiceAccount
+  name: metallb-watchdog
+  namespace: metallb-watchdog
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: watchdog-script
+  namespace: metallb-watchdog
+data:
+  watchdog.sh: |
+    #!/bin/bash
+    
+    # Configuration
+    CHECK_INTERVAL=60
+    FAILURE_THRESHOLD=3
+    COOLDOWN_PERIOD=300  # Don't restart speakers more than once every 5 minutes
+    LAST_RESTART_FILE="/tmp/last-metallb-restart"
+    
+    log() {
+        echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
+    }
+    
+    check_cooldown() {
+        if [ -f "$LAST_RESTART_FILE" ]; then
+            last_restart=$(cat "$LAST_RESTART_FILE")
+            current_time=$(date +%s)
+            time_diff=$((current_time - last_restart))
+            
+            if [ $time_diff -lt $COOLDOWN_PERIOD ]; then
+                log "Cooldown active. $((COOLDOWN_PERIOD - time_diff))s remaining"
+                return 1
+            fi
+        fi
+        return 0
+    }
+    
+    restart_metallb_speakers() {
+        log "⚠️  LoadBalancer connectivity issues detected"
+        log "Restarting MetalLB speaker pods..."
+        
+        kubectl delete pod -n metallb-system -l component=speaker
+        
+        if [ $? -eq 0 ]; then
+            log "✓ MetalLB speakers restarted successfully"
+            date +%s > "$LAST_RESTART_FILE"
+            return 0
+        else
+            log "✗ Failed to restart MetalLB speakers"
+            return 1
+        fi
+    }
+    
+    test_loadbalancer_ip() {
+        local ip=$1
+        local port=$2
+        
+        # Try TCP connection with 2 second timeout
+        timeout 2 bash -c "cat < /dev/null > /dev/tcp/$ip/$port" 2>/dev/null
+        return $?
+    }
+    
+    check_loadbalancers() {
+        local failure_count=0
+        local total_count=0
+        
+        # Get all LoadBalancer services
+        local services=$(kubectl get svc -A -o json | jq -r '.items[] | select(.spec.type=="LoadBalancer") | "\(.metadata.namespace)/\(.metadata.name):\(.status.loadBalancer.ingress[0].ip):\(.spec.ports[0].port)"')
+        
+        if [ -z "$services" ]; then
+            log "No LoadBalancer services found"
+            return 0
+        fi
+        
+        log "Checking LoadBalancer services..."
+        
+        while IFS= read -r service; do
+            [ -z "$service" ] && continue
+            
+            namespace=$(echo "$service" | cut -d'/' -f1)
+            name_ip_port=$(echo "$service" | cut -d'/' -f2)
+            name=$(echo "$name_ip_port" | cut -d':' -f1)
+            ip=$(echo "$name_ip_port" | cut -d':' -f2)
+            port=$(echo "$name_ip_port" | cut -d':' -f3)
+            
+            if [ "$ip" == "null" ] || [ -z "$ip" ]; then
+                log "  ⚠️  $namespace/$name - No IP assigned"
+                ((failure_count++))
+                ((total_count++))
+                continue
+            fi
+            
+            ((total_count++))
+            
+            if test_loadbalancer_ip "$ip" "$port"; then
+                log "  ✓ $namespace/$name ($ip:$port) - OK"
+            else
+                log "  ✗ $namespace/$name ($ip:$port) - FAILED"
+                ((failure_count++))
+            fi
+        done <<< "$services"
+        
+        log "Results: $((total_count - failure_count))/$total_count services healthy"
+        
+        # If more than 50% failed, restart speakers
+        if [ $total_count -gt 0 ] && [ $failure_count -gt 0 ]; then
+            failure_percentage=$((failure_count * 100 / total_count))
+            if [ $failure_percentage -ge 50 ]; then
+                return 1
+            fi
+        fi
+        
+        return 0
+    }
+    
+    # Main loop
+    log "MetalLB Watchdog starting..."
+    log "Check interval: ${CHECK_INTERVAL}s"
+    log "Failure threshold: ${FAILURE_THRESHOLD} consecutive failures"
+    log "Cooldown period: ${COOLDOWN_PERIOD}s"
+    
+    consecutive_failures=0
+    
+    while true; do
+        if check_loadbalancers; then
+            consecutive_failures=0
+        else
+            ((consecutive_failures++))
+            log "Consecutive failures: $consecutive_failures/$FAILURE_THRESHOLD"
+            
+            if [ $consecutive_failures -ge $FAILURE_THRESHOLD ]; then
+                if check_cooldown; then
+                    restart_metallb_speakers
+                    consecutive_failures=0
+                    # Extra wait after restart
+                    sleep 30
+                fi
+            fi
+        fi
+        
+        sleep $CHECK_INTERVAL
+    done
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: metallb-watchdog
+  namespace: metallb-watchdog
+  labels:
+    app: metallb-watchdog
+spec:
+  selector:
+    matchLabels:
+      app: metallb-watchdog
+  template:
+    metadata:
+      labels:
+        app: metallb-watchdog
+    spec:
+      serviceAccountName: metallb-watchdog
+      hostNetwork: true
+      containers:
+      - name: watchdog
+        image: alpine:3.19
+        command:
+        - /bin/sh
+        - -c
+        - |
+          apk add --no-cache bash curl jq kubectl
+          chmod +x /scripts/watchdog.sh
+          exec /scripts/watchdog.sh
+        volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        securityContext:
+          capabilities:
+            add:
+            - NET_RAW  # For TCP connection tests
+      volumes:
+      - name: scripts
+        configMap:
+          name: watchdog-script
+          defaultMode: 0755
+      tolerations:
+      - effect: NoSchedule
+        operator: Exists

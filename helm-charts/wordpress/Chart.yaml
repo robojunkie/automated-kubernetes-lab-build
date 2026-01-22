@@ -1,0 +1,12 @@
+apiVersion: v2
+name: wordpress
+description: A Helm chart for WordPress with MySQL
+type: application
+version: 1.0.0
+appVersion: "latest"
+keywords:
+  - wordpress
+  - cms
+  - blog
+maintainers:
+  - name: Lab Admin

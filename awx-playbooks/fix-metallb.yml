@@ -1,0 +1,57 @@
+---
+# Fix MetalLB LoadBalancer connectivity by restarting speaker pods
+# This forces re-announcement of LoadBalancer IPs via Layer 2 ARP
+- name: Fix MetalLB LoadBalancers
+  hosts: localhost
+  gather_facts: false
+  
+  tasks:
+    - name: Display current MetalLB speaker pods
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: metallb-system
+        label_selectors:
+          - component=speaker
+      register: speaker_pods
+      
+    - name: Show speaker pods before restart
+      debug:
+        msg: "Found {{ speaker_pods.resources | length }} MetalLB speaker pods"
+        
+    - name: Delete MetalLB speaker pods to force restart
+      kubernetes.core.k8s:
+        state: absent
+        kind: Pod
+        namespace: metallb-system
+        label_selectors:
+          - component=speaker
+          
+    - name: Wait for speaker pods to be recreated
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: metallb-system
+        label_selectors:
+          - component=speaker
+        wait: yes
+        wait_condition:
+          type: Ready
+          status: "True"
+        wait_timeout: 120
+      register: new_speakers
+      
+    - name: Verify all speaker pods are ready
+      debug:
+        msg: "{{ new_speakers.resources | length }} speaker pods are now running and ready"
+        
+    - name: Get LoadBalancer services status
+      kubernetes.core.k8s_info:
+        kind: Service
+        label_selectors:
+          - type=LoadBalancer
+      register: lb_services
+      
+    - name: Display LoadBalancer services
+      debug:
+        msg: "{{ item.metadata.name }} ({{ item.metadata.namespace }}): {{ item.status.loadBalancer.ingress[0].ip | default('pending') }}"
+      loop: "{{ lb_services.resources }}"
+      when: lb_services.resources | length > 0

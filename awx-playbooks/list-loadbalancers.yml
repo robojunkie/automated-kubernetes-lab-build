@@ -1,0 +1,30 @@
+---
+# List all LoadBalancer services and their IPs
+- name: List LoadBalancer Services
+  hosts: localhost
+  gather_facts: false
+  
+  tasks:
+    - name: Get all services
+      kubernetes.core.k8s_info:
+        kind: Service
+      register: all_services
+      
+    - name: Filter LoadBalancer services
+      set_fact:
+        lb_services: "{{ all_services.resources | selectattr('spec.type', 'equalto', 'LoadBalancer') | list }}"
+        
+    - name: Display LoadBalancer services
+      debug:
+        msg: |
+          === LOADBALANCER SERVICES ===
+          {% for svc in lb_services %}
+          
+          Name: {{ svc.metadata.name }}
+          Namespace: {{ svc.metadata.namespace }}
+          External IP: {{ svc.status.loadBalancer.ingress[0].ip | default('pending') }}
+          Ports: {{ svc.spec.ports | map(attribute='port') | list | join(', ') }}
+          Age: {{ svc.metadata.creationTimestamp }}
+          {% endfor %}
+          
+          Total LoadBalancer services: {{ lb_services | length }}
