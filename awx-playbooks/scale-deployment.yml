@@ -1,0 +1,51 @@
+---
+# Scale a Kubernetes deployment to a specific number of replicas
+- name: Scale Kubernetes Deployment
+  hosts: localhost
+  gather_facts: false
+  
+  tasks:
+    - name: Validate required variables
+      assert:
+        that:
+          - deployment_name is defined
+          - namespace is defined
+          - replicas is defined
+          - replicas | int >= 0
+        fail_msg: "deployment_name, namespace, and replicas (>= 0) are required"
+        
+    - name: Get current deployment
+      kubernetes.core.k8s_info:
+        kind: Deployment
+        name: "{{ deployment_name }}"
+        namespace: "{{ namespace }}"
+      register: deployment
+      
+    - name: Fail if deployment doesn't exist
+      fail:
+        msg: "Deployment {{ deployment_name }} not found in namespace {{ namespace }}"
+      when: deployment.resources | length == 0
+      
+    - name: Show current scale
+      debug:
+        msg: "Current replicas: {{ deployment.resources[0].spec.replicas }}, Scaling to: {{ replicas }}"
+        
+    - name: Scale deployment
+      kubernetes.core.k8s_scale:
+        kind: Deployment
+        name: "{{ deployment_name }}"
+        namespace: "{{ namespace }}"
+        replicas: "{{ replicas | int }}"
+        wait: yes
+        wait_timeout: 300
+        
+    - name: Verify scaling complete
+      kubernetes.core.k8s_info:
+        kind: Deployment
+        name: "{{ deployment_name }}"
+        namespace: "{{ namespace }}"
+      register: scaled_deployment
+      
+    - name: Display result
+      debug:
+        msg: "Deployment {{ deployment_name }} scaled to {{ replicas }} replicas. Ready: {{ scaled_deployment.resources[0].status.readyReplicas | default(0) }}/{{ replicas }}"

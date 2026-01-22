@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rundeck
+  namespace: rundeck
+spec:
+  replicas: {{ .Values.rundeck.replicas }}
+  selector:
+    matchLabels:
+      app: rundeck
+  template:
+    metadata:
+      labels:
+        app: rundeck
+    spec:
+      serviceAccountName: rundeck
+      containers:
+      - name: rundeck
+        image: {{ .Values.rundeck.image }}
+        env:
+        - name: RUNDECK_GRAILS_URL
+          value: "http://rundeck.home.lab:4440"
+        - name: RUNDECK_SERVER_FORWARDED
+          value: "true"
+        - name: RUNDECK_DATABASE_DRIVER
+          value: "org.h2.Driver"
+        - name: RUNDECK_DATABASE_URL
+          value: "jdbc:h2:file:/home/rundeck/server/data/grailsdb;DB_CLOSE_ON_EXIT=FALSE"
+        - name: RUNDECK_PREAUTH_ENABLED
+          value: "false"
+        - name: RUNDECK_SECURITY_JAASLOGINMODULE_NAME
+          value: "RDpropertyfilelogin"
+        - name: RUNDECK_TOKENS_FILE
+          value: "/home/rundeck/server/data/tokens.properties"
+        ports:
+        - containerPort: 4440
+          name: http
+        volumeMounts:
+        - name: rundeck-data
+          mountPath: /home/rundeck/server/data
+        - name: scripts
+          mountPath: /scripts
+        - name: kubeconfig
+          mountPath: /home/rundeck/.kube
+        resources:
+          requests:
+            memory: {{ .Values.resources.requests.memory }}
+            cpu: {{ .Values.resources.requests.cpu }}
+          limits:
+            memory: {{ .Values.resources.limits.memory }}
+            cpu: {{ .Values.resources.limits.cpu }}
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 4440
+          initialDelaySeconds: 180
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 6
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 4440
+          initialDelaySeconds: 120
+          periodSeconds: 15
+          timeoutSeconds: 10
+          failureThreshold: 10
+      # Init container to install kubectl
+      initContainers:
+      - name: install-kubectl
+        image: alpine:3.19
+        command:
+        - sh
+        - -c
+        - |
+          apk add --no-cache curl
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          mv kubectl /kubectl-bin/kubectl
+        volumeMounts:
+        - name: kubectl-bin
+          mountPath: /kubectl-bin
+      volumes:
+      {{- if .Values.persistence.enabled }}
+      - name: rundeck-data
+        persistentVolumeClaim:
+          claimName: rundeck-data
+      {{- else }}
+      - name: rundeck-data
+        emptyDir: {}
+      {{- end }}
+      - name: scripts
+        configMap:
+          name: rundeck-scripts
+          defaultMode: 0755
+      - name: kubectl-bin
+        emptyDir: {}
+      - name: kubeconfig
+        emptyDir: {}

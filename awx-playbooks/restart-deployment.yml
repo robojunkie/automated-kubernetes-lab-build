@@ -1,0 +1,61 @@
+---
+# Restart a Kubernetes deployment by performing a rollout restart
+- name: Restart Kubernetes Deployment
+  hosts: localhost
+  gather_facts: false
+  
+  tasks:
+    - name: Validate required variables
+      assert:
+        that:
+          - deployment_name is defined
+          - deployment_name | length > 0
+          - namespace is defined
+          - namespace | length > 0
+        fail_msg: "deployment_name and namespace are required"
+        
+    - name: Get current deployment status
+      kubernetes.core.k8s_info:
+        kind: Deployment
+        name: "{{ deployment_name }}"
+        namespace: "{{ namespace }}"
+      register: deployment_info
+      
+    - name: Fail if deployment doesn't exist
+      fail:
+        msg: "Deployment {{ deployment_name }} not found in namespace {{ namespace }}"
+      when: deployment_info.resources | length == 0
+      
+    - name: Show current deployment status
+      debug:
+        msg: "Current replicas: {{ deployment_info.resources[0].status.replicas | default(0) }}, Ready: {{ deployment_info.resources[0].status.readyReplicas | default(0) }}"
+        
+    - name: Perform rollout restart
+      kubernetes.core.k8s:
+        kind: Deployment
+        name: "{{ deployment_name }}"
+        namespace: "{{ namespace }}"
+        state: patched
+        definition:
+          spec:
+            template:
+              metadata:
+                annotations:
+                  kubectl.kubernetes.io/restartedAt: "{{ ansible_date_time.iso8601 }}"
+                  
+    - name: Wait for rollout to complete
+      kubernetes.core.k8s_info:
+        kind: Deployment
+        name: "{{ deployment_name }}"
+        namespace: "{{ namespace }}"
+        wait: yes
+        wait_condition:
+          type: Progressing
+          status: "True"
+          reason: NewReplicaSetAvailable
+        wait_timeout: 300
+      register: rollout_result
+      
+    - name: Display rollout success
+      debug:
+        msg: "Deployment {{ deployment_name }} successfully restarted in namespace {{ namespace }}"

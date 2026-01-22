@@ -1,0 +1,107 @@
+---
+# Comprehensive Kubernetes cluster health check
+- name: Check Kubernetes Cluster Health
+  hosts: localhost
+  gather_facts: false
+  
+  tasks:
+    - name: Get cluster nodes
+      kubernetes.core.k8s_info:
+        kind: Node
+      register: nodes
+      
+    - name: Display node status
+      debug:
+        msg: |
+          === NODES ({{ nodes.resources | length }}) ===
+          {% for node in nodes.resources %}
+          {{ node.metadata.name }}: {{ node.status.conditions | selectattr('type', 'equalto', 'Ready') | map(attribute='status') | first }}
+          {% endfor %}
+          
+    - name: Get all pods
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: ""
+      register: all_pods
+      
+    - name: Count pod states
+      set_fact:
+        running_pods: "{{ all_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length }}"
+        pending_pods: "{{ all_pods.resources | selectattr('status.phase', 'equalto', 'Pending') | list | length }}"
+        failed_pods: "{{ all_pods.resources | selectattr('status.phase', 'equalto', 'Failed') | list | length }}"
+        
+    - name: Display pod summary
+      debug:
+        msg: |
+          === PODS SUMMARY ===
+          Total: {{ all_pods.resources | length }}
+          Running: {{ running_pods }}
+          Pending: {{ pending_pods }}
+          Failed: {{ failed_pods }}
+          
+    - name: Get MetalLB speaker pods
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: metallb-system
+        label_selectors:
+          - component=speaker
+      register: metallb_speakers
+      
+    - name: Display MetalLB status
+      debug:
+        msg: |
+          === METALLB SPEAKERS ===
+          Speaker Pods: {{ metallb_speakers.resources | length }}
+          Ready: {{ metallb_speakers.resources | selectattr('status.phase', 'equalto', 'Running') | list | length }}
+          
+    - name: Get LoadBalancer services
+      kubernetes.core.k8s_info:
+        kind: Service
+      register: all_services
+      
+    - name: Filter LoadBalancer services
+      set_fact:
+        lb_services: "{{ all_services.resources | selectattr('spec.type', 'equalto', 'LoadBalancer') | list }}"
+        
+    - name: Display LoadBalancer services
+      debug:
+        msg: |
+          === LOADBALANCER SERVICES ({{ lb_services | length }}) ===
+          {% for svc in lb_services %}
+          {{ svc.metadata.namespace }}/{{ svc.metadata.name }}: {{ svc.status.loadBalancer.ingress[0].ip | default('pending') }}
+          {% endfor %}
+          
+    - name: Get PersistentVolumeClaims
+      kubernetes.core.k8s_info:
+        kind: PersistentVolumeClaim
+      register: pvcs
+      
+    - name: Display PVC status
+      debug:
+        msg: |
+          === PERSISTENT VOLUME CLAIMS ({{ pvcs.resources | length }}) ===
+          {% for pvc in pvcs.resources %}
+          {{ pvc.metadata.namespace }}/{{ pvc.metadata.name }}: {{ pvc.status.phase }} ({{ pvc.spec.resources.requests.storage }})
+          {% endfor %}
+          
+    - name: Get failed or pending pods
+      set_fact:
+        problem_pods: "{{ all_pods.resources | selectattr('status.phase', 'in', ['Failed', 'Pending', 'Unknown']) | list }}"
+        
+    - name: Display problem pods if any
+      debug:
+        msg: |
+          === PROBLEM PODS ===
+          {% for pod in problem_pods %}
+          {{ pod.metadata.namespace }}/{{ pod.metadata.name }}: {{ pod.status.phase }}
+          {% endfor %}
+      when: problem_pods | length > 0
+      
+    - name: Health check summary
+      debug:
+        msg: |
+          === CLUSTER HEALTH SUMMARY ===
+          Nodes: {{ nodes.resources | length }} total
+          Pods: {{ running_pods }}/{{ all_pods.resources | length }} running
+          LoadBalancers: {{ lb_services | length }} services
+          Problems: {{ problem_pods | length }} pods need attention

@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rundeck-config
+  namespace: rundeck
+data:
+  rundeck-config.properties: |
+    # Enable database-based user management
+    rundeck.security.fileUserRealm.enabled=false
+    
+    # Use database for authentication
+    grails.plugin.springsecurity.userLookup.userDomainClassName=rundeck.User
+    grails.plugin.springsecurity.userLookup.authorityJoinClassName=rundeck.UserRole
+    grails.plugin.springsecurity.authority.className=rundeck.Role
+    
+    # Allow user profile management
+    rundeck.security.userrole.cache.enabled=true
