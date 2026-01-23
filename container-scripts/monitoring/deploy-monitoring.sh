@@ -1,6 +1,7 @@
 #!/bin/bash
 ################################################################################
 # Deploy Prometheus + Grafana Monitoring Stack
+# Monitors Kubernetes cluster and can be extended to monitor LAN devices
 ################################################################################
 
 set -e
@@ -8,55 +9,74 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-source "$PROJECT_ROOT/scripts/helpers/logging.sh"
-source "$PROJECT_ROOT/scripts/helpers/ssh-utils.sh"
+echo "=== Deploying Prometheus & Grafana Monitoring Stack ==="
+echo ""
 
-MASTER_IP="${1:-}"
-USE_LOADBALANCER="${2:-false}"
-
-if [[ -z "$MASTER_IP" ]]; then
-    log_error "Usage: $0 <master-ip> [use-loadbalancer:true/false]"
+# Check if kubectl is configured
+if ! kubectl cluster-info &>/dev/null; then
+    echo "Error: kubectl is not configured or cluster is not accessible"
     exit 1
 fi
 
-log_info "Deploying kube-prometheus-stack (Prometheus + Grafana)..."
-log_info "This will take 2-3 minutes..."
+# Add Helm repo
+echo "Adding Prometheus Helm repository..."
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
 
-# Clone kube-prometheus manifests
-ssh_execute "$MASTER_IP" "rm -rf /tmp/kube-prometheus && git clone --depth 1 https://github.com/prometheus-operator/kube-prometheus.git /tmp/kube-prometheus"
+# Create monitoring namespace
+echo "Creating monitoring namespace..."
+kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
 
-# Deploy CRDs
-log_info "Creating monitoring CRDs..."
-ssh_execute "$MASTER_IP" "cd /tmp/kube-prometheus && KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply --server-side -f manifests/setup"
+# Install kube-prometheus-stack
+echo ""
+echo "Installing kube-prometheus-stack (this may take 5-10 minutes)..."
+helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+  -n monitoring \
+  -f "${PROJECT_ROOT}/configs/monitoring-values.yaml" \
+  --wait
 
-sleep 10
+echo ""
+echo "Waiting for Prometheus and Grafana pods to be ready..."
+kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=grafana -n monitoring --timeout=300s || true
+kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=prometheus -n monitoring --timeout=300s || true
 
-# Deploy monitoring components
-log_info "Deploying monitoring components..."
-ssh_execute "$MASTER_IP" "cd /tmp/kube-prometheus && KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f manifests/"
+# Get service information
+echo ""
+echo "Getting LoadBalancer IPs..."
+GRAFANA_IP=$(kubectl get svc -n monitoring kube-prometheus-stack-grafana -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "pending")
 
-log_info "Waiting for pods to be ready (this takes a while)..."
-sleep 30
-
-# Wait for Grafana to be ready
-for i in {1..120}; do
-    if ssh_execute "$MASTER_IP" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -n monitoring | grep grafana | grep -q 'Running'"; then
-        log_success "Grafana is running"
-        break
-    fi
-    sleep 5
-done
-
-# Configure Grafana access
-log_info "Configuring Grafana access..."
-if [[ "$USE_LOADBALANCER" == "true" ]]; then
-    ssh_execute "$MASTER_IP" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl patch svc grafana -n monitoring -p '{\"spec\":{\"type\":\"LoadBalancer\"}}'"
-    log_info "Grafana will be available on LoadBalancer IP (check with: kubectl get svc -n monitoring)"
-else
-    ssh_execute "$MASTER_IP" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl patch svc grafana -n monitoring -p '{\"spec\":{\"type\":\"NodePort\",\"ports\":[{\"port\":3000,\"nodePort\":30300,\"targetPort\":3000}]}}'"
-    log_success "Grafana available at: http://<node-ip>:30300"
-fi
-
-log_success "Monitoring stack deployed successfully!"
-log_info "Grafana credentials: admin / admin (change on first login)"
-log_info "Prometheus available at: kubectl port-forward -n monitoring svc/prometheus-k8s 9090:9090"
+# Display status
+echo ""
+echo "============================================"
+echo "  Monitoring Stack Deployment Complete!"
+echo "============================================"
+echo ""
+echo "Grafana:"
+echo "  URL: http://${GRAFANA_IP}:3000 (or http://grafana.home.lab)"
+echo "  Username: admin"
+echo "  Password: changeme123"
+echo ""
+echo "Prometheus:"
+echo "  Access via port-forward:"
+echo "  kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
+echo ""
+echo "Alertmanager:"
+echo "  Access via port-forward:"
+echo "  kubectl port-forward -n monitoring svc/kube-prometheus-stack-alertmanager 9093:9093"
+echo ""
+echo "Pre-configured Dashboards:"
+echo "  - Kubernetes / Compute Resources / Cluster"
+echo "  - Kubernetes / Compute Resources / Namespace (Pods)"
+echo "  - Node Exporter / Nodes"
+echo "  - Kubernetes / Networking / Cluster"
+echo "  - Prometheus / Overview"
+echo ""
+echo "Next Steps:"
+echo "  1. Add Grafana DNS to pfSense: grafana.home.lab -> ${GRAFANA_IP}"
+echo "  2. Login to Grafana and explore dashboards"
+echo "  3. Install node_exporter on external servers to monitor"
+echo "  4. See docs/MONITORING.md for full configuration guide"
+echo ""
+echo "View all monitoring resources:"
+echo "  kubectl get all -n monitoring"
+echo "============================================"

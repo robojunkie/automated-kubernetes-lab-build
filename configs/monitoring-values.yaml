@@ -1,0 +1,183 @@
+---
+# Prometheus & Grafana Stack for Kubernetes and LAN Monitoring
+# Deployed via Helm with custom values
+
+# Add Helm repo and install
+# helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+# helm repo update
+# helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack -n monitoring --create-namespace -f monitoring-values.yaml
+
+# Grafana Configuration
+grafana:
+  enabled: true
+  adminPassword: "changeme123"  # Change this!
+  
+  service:
+    type: LoadBalancer
+    annotations:
+      metallb.universe.tf/address-pool: default
+  
+  persistence:
+    enabled: true
+    storageClassName: local-path
+    size: 10Gi
+  
+  # Pre-load community dashboards
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+      - name: 'default'
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/default
+  
+  # Resource limits
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+      cpu: 500m
+
+# Prometheus Configuration
+prometheus:
+  enabled: true
+  
+  prometheusSpec:
+    # Retention and storage
+    retention: 15d
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 50Gi
+    
+    # Resource limits
+    resources:
+      requests:
+        memory: 1Gi
+        cpu: 500m
+      limits:
+        memory: 2Gi
+        cpu: 2000m
+    
+    # Enable service monitor discovery
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    
+    # Additional scrape configs for external targets (LAN devices)
+    additionalScrapeConfigs:
+    # Example: Node Exporter on external servers
+    - job_name: 'external-nodes'
+      static_configs:
+      - targets:
+        # Add your external servers here (install node_exporter on them)
+        # - '192.168.1.10:9100'  # Example server
+        # - '192.168.1.11:9100'  # Another server
+        labels:
+          environment: 'home-lan'
+    
+    # Example: pfSense metrics (requires pfSense exporter)
+    - job_name: 'pfsense'
+      static_configs:
+      - targets:
+        # - '192.168.1.1:9100'  # pfSense with node_exporter
+        labels:
+          device: 'pfsense-router'
+    
+    # Example: SNMP exporter for network devices
+    - job_name: 'snmp-devices'
+      static_configs:
+      - targets:
+        # - '192.168.1.20'  # Cisco switch
+        labels:
+          device: 'cisco-3560x'
+      metrics_path: /snmp
+      params:
+        module: [if_mib]
+      relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: snmp-exporter:9116  # SNMP exporter service
+
+# Alertmanager Configuration
+alertmanager:
+  enabled: true
+  
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 5Gi
+    
+    resources:
+      requests:
+        memory: 128Mi
+        cpu: 50m
+      limits:
+        memory: 256Mi
+        cpu: 200m
+
+# Node Exporter - Hardware/OS metrics from cluster nodes
+nodeExporter:
+  enabled: true
+
+# Kube State Metrics - Kubernetes object metrics
+kubeStateMetrics:
+  enabled: true
+
+# Prometheus Operator
+prometheusOperator:
+  enabled: true
+  
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 50m
+    limits:
+      memory: 256Mi
+      cpu: 200m
+
+# Default rules for alerting
+defaultRules:
+  create: true
+  rules:
+    alertmanager: true
+    etcd: true
+    configReloaders: true
+    general: true
+    k8s: true
+    kubeApiserverAvailability: true
+    kubeApiserverSlos: true
+    kubelet: true
+    kubeProxy: true
+    kubePrometheusGeneral: true
+    kubePrometheusNodeRecording: true
+    kubernetesApps: true
+    kubernetesResources: true
+    kubernetesStorage: true
+    kubernetesSystem: true
+    kubeScheduler: true
+    kubeStateMetrics: true
+    network: true
+    node: true
+    nodeExporterAlerting: true
+    nodeExporterRecording: true
+    prometheus: true
+    prometheusOperator: true
