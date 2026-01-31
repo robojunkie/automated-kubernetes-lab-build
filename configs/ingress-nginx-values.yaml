@@ -1,0 +1,16 @@
+controller:
+  service:
+    type: LoadBalancer
+    loadBalancerIP: 192.168.1.50
+    externalTrafficPolicy: Local
+  ingressClassResource:
+    default: true
+  admissionWebhooks:
+    enabled: false
+  # Enable SSL passthrough for services that handle their own TLS
+  extraArgs:
+    enable-ssl-passthrough: true
+  # Expose additional ports for non-HTTP services
+  tcp:
+    5000: "registry/registry:5000"
+    9443: "portainer/portainer:9443"

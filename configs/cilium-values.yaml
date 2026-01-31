@@ -1,0 +1,96 @@
+---
+# Cilium CNI Configuration with Built-in LoadBalancer
+# Replaces Calico CNI + MetalLB with single solution
+# More stable, environment agnostic, eBPF-based
+
+# IP Address Management for LoadBalancer services
+ipam:
+  mode: kubernetes
+
+# LoadBalancer IP Address Management (LB-IPAM)
+# No BGP required - works in any environment
+bgpControlPlane:
+  enabled: false
+
+l2announcements:
+  enabled: true
+
+externalIPs:
+  enabled: true
+
+# LoadBalancer IP Pool (same range as MetalLB)
+# Change this to match your network
+k8sServiceHost: 192.168.1.202  # Kubernetes API server IP
+k8sServicePort: 6443
+
+# LB-IPAM Configuration
+# Cilium will assign IPs from this pool to LoadBalancer services
+ingressController:
+  enabled: false
+  loadbalancerMode: dedicated
+
+# Enable Hubble for observability
+hubble:
+  enabled: true
+  
+  relay:
+    enabled: true
+  
+  ui:
+    enabled: true
+    
+  metrics:
+    enabled:
+    - dns:query
+    - drop
+    - tcp
+    - flow
+    - port-distribution
+    - icmp
+    - http
+
+# Enable host firewall for security
+hostFirewall:
+  enabled: true
+
+# Replace kube-proxy with eBPF (more efficient)
+kubeProxyReplacement: true
+
+# Operator configuration
+operator:
+  replicas: 1
+  
+# Enable IPv4
+ipv4:
+  enabled: true
+
+ipv6:
+  enabled: false
+
+# Tunnel mode (use VXLAN for compatibility)
+tunnelProtocol: vxlan
+
+# Enable bandwidth manager
+bandwidthManager:
+  enabled: true
+
+# Enable local redirect policy
+localRedirectPolicy: true
+
+# Monitoring
+prometheus:
+  enabled: true
+  
+# Enable CNI chaining (helpful during migration)
+cni:
+  chainingMode: none
+  exclusive: true
+
+# Resource limits
+resources:
+  limits:
+    cpu: 4000m
+    memory: 4Gi
+  requests:
+    cpu: 100m
+    memory: 512Mi

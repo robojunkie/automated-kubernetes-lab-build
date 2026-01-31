@@ -1,0 +1,47 @@
+---
+# Cilium LoadBalancer IP Pool
+# Defines IP range for LoadBalancer services
+# Change 192.168.1.50-192.168.1.250 to match your network
+
+apiVersion: "cilium.io/v2alpha1"
+kind: CiliumLoadBalancerIPPool
+metadata:
+  name: default-pool
+spec:
+  blocks:
+  - cidr: "192.168.1.50/32"  # First IP
+  - cidr: "192.168.1.51/32"
+  - cidr: "192.168.1.52/32"
+  - cidr: "192.168.1.53/32"
+  - cidr: "192.168.1.54/32"
+  - cidr: "192.168.1.55/32"
+  - cidr: "192.168.1.56/32"
+  - cidr: "192.168.1.57/32"
+  - cidr: "192.168.1.58/32"
+  - cidr: "192.168.1.59/32"
+  - cidr: "192.168.1.60/32"
+  - cidr: "192.168.1.61/32"
+  - cidr: "192.168.1.62/32"
+  - cidr: "192.168.1.63/32"
+  - cidr: "192.168.1.64/32"
+  - cidr: "192.168.1.65/32"
+  - cidr: "192.168.1.66/32"
+  - cidr: "192.168.1.67/32"
+  - cidr: "192.168.1.68/32"
+  - cidr: "192.168.1.69/32"
+  - cidr: "192.168.1.70/32"  # 20 IPs defined, extend as needed
+---
+apiVersion: cilium.io/v2alpha1
+kind: CiliumL2AnnouncementPolicy
+metadata:
+  name: default-l2-policy
+spec:
+  loadBalancerIPs: true
+  interfaces:
+  - ^ens.*
+  - ^eth.*
+  - ^enp.*
+  nodeSelector:
+    matchExpressions:
+    - key: node-role.kubernetes.io/control-plane
+      operator: DoesNotExist

@@ -15,8 +15,7 @@ This project automates the entire process of setting up a **complete Kubernetes 
 
 **Phase 1: Base Cluster** (Automated via `build-lab.sh`):
 - ✅ Kubernetes 1.28 cluster (kubeadm)
-- ✅ Calico CNI networking (OS-optimized)
-- ✅ MetalLB load balancer (with customizable IP pool)
+- ✅ Cilium CNI with built-in LoadBalancer (eBPF-based, faster than iptables)
 - ✅ Local-path storage provisioner
 - ✅ **Portainer** - Web UI for visual cluster management
 
@@ -42,7 +41,7 @@ Deploy via **Portainer UI** (visual) or **CLI scripts** (automated):
 - **🖥️ Multi-OS Support**: Ubuntu 24.04 and Rocky Linux 9.6 fully tested and working
 - **🔧 Lab-Agnostic**: Works with Proxmox, VMware, VirtualBox, bare metal, or any VM platform
 - **🎯 Two-Phase Deployment**:
-  - **Phase 1**: Automated base cluster (Kubernetes + Calico + MetalLB + Portainer)
+  - **Phase 1**: Automated base cluster (Kubernetes + Cilium + Portainer)
   - **Phase 2**: Deploy additional components via Portainer UI or CLI scripts
 - **📦 Modular Infrastructure**: Add components as needed:
   - Container Registry, Ingress, TLS, Monitoring, Storage, Git, Object Storage
@@ -51,7 +50,7 @@ Deploy via **Portainer UI** (visual) or **CLI scripts** (automated):
   - Automatic backup during rebuild process
   - Restore Portainer and applications after rebuild
   - No data loss - rebuild with confidence!
-- **🌐 Real LoadBalancer IPs**: MetalLB provides actual IPs from your network (not just NodePort)
+- **🌐 Real LoadBalancer IPs**: Cilium LB-IPAM provides actual IPs from your network (no BGP required)
 - **🎯 Production-Grade**: Uses `kubeadm` for real-world Kubernetes setup matching production environments
 - **📚 Comprehensive Documentation**: Beginner-friendly guides assuming no prior Kubernetes knowledge
 - **🔄 SSH Orchestration**: Single jump box controls everything - no need to login to each node
